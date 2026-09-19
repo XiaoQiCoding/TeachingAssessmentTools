@@ -1,0 +1,24 @@
+# Local history backup from the former nested repository
+.git-history/
+
+# Generated and temporary files
+outputs/
+webapp/dist/
+webapp/.deploy-package/
+webapp/node_modules/
+tools/spreadsheets/node_modules/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+~$*.docx
+
+# Temporary original kept only while Word has the file open
+/docs/AI课堂评估工具方案总结.docx

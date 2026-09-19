@@ -1,0 +1,11 @@
+{
+  "name": "special-education-teaching-evaluation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "validate": "node validate.mjs",
+    "test": "node build.mjs && node tests/smoke-test.mjs",
+    "start": "node backend/local-server.mjs"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Special education teaching aids evaluation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "mode", "status", "lesson", "summary", "tools", "dimensions", "suggestions", "questions", "limitations"],
+  "properties": {
+    "version": {"const": "1.0"},
+    "mode": {"enum": ["pre", "post"]},
+    "status": {"enum": ["complete", "partial", "needs_input"]},
+    "lesson": {"type": "string"},
+    "summary": {"type": "string"},
+    "tools": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "goal", "activity", "evidence"], "properties": {"name": {"type": "string"}, "goal": {"type": "string"}, "activity": {"type": "string"}, "evidence": {"$ref": "#/$defs/evidenceList"}}}},
+    "dimensions": {"type": "array", "maxItems": 5, "items": {"type": "object", "additionalProperties": false, "required": ["id", "label", "status", "finding", "evidence"], "properties": {"id": {"enum": ["alignment", "adequacy", "outcomes", "innovation_feedback", "awards"]}, "label": {"type": "string"}, "status": {"enum": ["supported", "mixed", "concern", "unknown", "not_applicable"]}, "finding": {"type": "string"}, "evidence": {"$ref": "#/$defs/evidenceList"}}}},
+    "suggestions": {"type": "array", "maxItems": 5, "items": {"type": "object", "additionalProperties": false, "required": ["priority", "dimension_id", "tool", "issue", "action", "location", "observe_next", "evidence"], "properties": {"priority": {"enum": ["high", "medium", "low"]}, "dimension_id": {"enum": ["alignment", "adequacy", "outcomes", "innovation_feedback", "awards"]}, "tool": {"type": "string"}, "issue": {"type": "string"}, "action": {"type": "string"}, "location": {"type": "string"}, "observe_next": {"type": "string"}, "evidence": {"$ref": "#/$defs/evidenceList"}}}},
+    "questions": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "evidenceList": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "locator", "kind", "excerpt"], "properties": {"source_id": {"type": "string"}, "locator": {"type": "string"}, "kind": {"enum": ["document", "teacher_report", "observation", "feedback", "award_document"]}, "excerpt": {"type": "string"}}}}
+  }
+}
