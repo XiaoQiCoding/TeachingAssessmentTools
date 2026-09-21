@@ -13,6 +13,9 @@ globalThis.fetch = async (_url, options) => {
   if (String(_url).includes("/anthropic/v1/messages")) return new Response(JSON.stringify({
     content: [{ type: "text", text: JSON.stringify({ summary: "发现一条候选证据", candidates: [{ start_seconds: 5, end_seconds: 12, phase: "tool_use", type: "response", student_id: "待确认", outcome: "positive", assistance: "gesture", confidence: "medium", note: "学生在手势提示后完成操作", reason: "对应课堂目标" }] }) }]
   }), { headers: { "content-type": "application/json" } });
+  if (JSON.stringify(body.messages).includes("课堂视频观察计划")) return new Response(JSON.stringify({
+    choices: [{ message: { content: "LESSON\t小青蛙找家\nGOAL\t学生能跟随指令完成动作\nSTEP\t教师示范\nINSTRUCTION\t请模仿小青蛙跳跃\nRESPONSE\t学生完成跳跃动作\nTRANSFER\t在新音乐中完成相同动作" } }], base_resp: { status_code: 0, status_msg: "success" }
+  }), { headers: { "content-type": "application/json" } });
   if (String(body.messages.at(-1).content).includes("模块 A 量表")) return new Response(JSON.stringify({
     choices: [{ message: { content: `SUMMARY\t模块 A AI 评估完成\n${["A1", "A2", "A3", "A4", "A5"].map((id, index) => `A\t${id}\t${index === 3 ? 5 : 4}\tsupported\t测试材料中的 ${id} 客观证据\t${id} 修改建议`).join("\n")}` } }], base_resp: { status_code: 0, status_msg: "success" }
   }), { headers: { "content-type": "application/json" } });
@@ -41,6 +44,11 @@ moduleAForm.set("basic", JSON.stringify({ tool_name: "测试教具", themes: ["�
 const moduleAResponse = await worker.fetch(new Request("https://example.test/api/evaluation/module-a", { method: "POST", body: moduleAForm }), { MINIMAX_API_KEY: "test-key" });
 const moduleAResult = await moduleAResponse.json();
 if (!moduleAResponse.ok || moduleAResult.kind !== "preclass_adaptation" || moduleAResult.dimensions.length !== 5 || moduleAResult.module_a_score !== 33.6 || moduleAResult.audit.safety_veto) throw new Error(JSON.stringify(moduleAResult));
+const planForm = new FormData();
+planForm.append("lesson_plan", new File(["小青蛙找家教案：学生能跟随指令完成跳跃动作。"], "小青蛙找家.txt", { type: "text/plain" }));
+const planResponse = await worker.fetch(new Request("https://example.test/api/classroom/plan", { method: "POST", body: planForm }), { MINIMAX_API_KEY: "test-key" });
+const planResult = await planResponse.json();
+if (!planResponse.ok || planResult.lesson !== "小青蛙找家" || planResult.goals.length !== 1 || planResult.steps.length !== 1 || planResult.generalization_tasks.length !== 1) throw new Error(JSON.stringify(planResult));
 const videoForm = new FormData();
 videoForm.set("mode", "frames");
 videoForm.set("duration", "30");

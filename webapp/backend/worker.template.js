@@ -220,13 +220,13 @@ function escapeControlsInStrings(source) {
   return output;
 }
 
-async function callMiniMax(env, messages, temperature = 0.2) {
+async function callMiniMax(env, messages, temperature = 0.2, maxCompletionTokens = 2048) {
   const apiBase = String(env.MINIMAX_API_BASE || "https://api.minimaxi.com/v1").replace(/\/$/, "");
   const model = env.MINIMAX_MODEL || "MiniMax-M3";
   const response = await fetch(`${apiBase}/chat/completions`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${env.MINIMAX_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, temperature, top_p: 0.9, max_completion_tokens: 2048 })
+    body: JSON.stringify({ model, messages, temperature, top_p: 0.9, max_completion_tokens: maxCompletionTokens })
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(`MiniMax 接口请求失败（${response.status}）`);
@@ -798,20 +798,48 @@ async function classroomExport(request) {
 }
 
 async function extractClassroomPlan(request, env) {
-  if (!env.MINIMAX_API_KEY) return json({ error: "尚未配置模型密钥，请先手工填写教案观察计划" }, 503);
+  if (!env.MINIMAX_API_KEY) return json({ error: "尚未配置模型密钥，暂时无法智能提取教案" }, 503);
   const form = await request.formData();
   const file = form.get("lesson_plan");
   if (!file || typeof file === "string") return json({ error: "请选择一份可读取的教案" }, 400);
   if (file.size > 10 * 1024 * 1024) return json({ error: "教案文件请控制在 10MB 以内" }, 413);
   const text = await extractFile(file);
   if (!text?.trim()) return json({ error: "未从教案中读取到文字，请转换为 DOCX、PPTX、TXT 或 MD" }, 422);
-  const system = "你负责从特殊教育教案中提取课堂视频观察计划。不要评价，不要编造。只输出有效JSON：{\"lesson\":\"课程名\",\"goals\":[\"可观察目标\"],\"steps\":[\"课堂环节\"],\"instructions\":[\"关键指令\"],\"expected_responses\":[\"预期学生反应\"],\"generalization_tasks\":[\"迁移任务\"]}。每个数组最多6项。";
-  const content = await callMiniMax(env, [{ role: "system", content: system }, { role: "user", content: text.slice(0, 80000) }], 0.1);
+  const system = "你负责从特殊教育教案中提取课堂视频观察计划。不要评价，不要编造，不要输出 JSON、Markdown、代码围栏或思考过程。只输出逐行 TAB 分隔文本：LESSON<TAB>课程名；GOAL<TAB>可观察目标；STEP<TAB>课堂环节；INSTRUCTION<TAB>关键指令；RESPONSE<TAB>预期学生反应；TRANSFER<TAB>迁移任务。除 LESSON 一行外，其他类型最多6行；字段内容不得换行。输出时使用真实制表符。";
+  const parsePlan = rawContent => {
+    const cleaned = String(rawContent || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    const start = cleaned.indexOf("{"), end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        const data = JSON.parse(escapeControlsInStrings(cleaned.slice(start, end + 1)).replace(/,\s*([}\]])/g, "$1"));
+        const result = { lesson: String(data.lesson || ""), goals: (data.goals || []).slice(0, 6), steps: (data.steps || []).slice(0, 6), instructions: (data.instructions || []).slice(0, 6), expected_responses: (data.expected_responses || []).slice(0, 6), generalization_tasks: (data.generalization_tasks || []).slice(0, 6) };
+        if (result.goals.length || result.steps.length || result.instructions.length) return result;
+      } catch {}
+    }
+    const result = { lesson: "", goals: [], steps: [], instructions: [], expected_responses: [], generalization_tasks: [] };
+    const targets = { GOAL: "goals", STEP: "steps", INSTRUCTION: "instructions", RESPONSE: "expected_responses", TRANSFER: "generalization_tasks" };
+    for (const line of cleaned.split(/\r?\n/)) {
+      let parts = line.trim().replace(/^[-*]\s*/, "").split("\t").map(value => value.trim());
+      if (parts.length < 2 && line.includes("|")) parts = line.split("|").map(value => value.trim()).filter(Boolean);
+      const type = String(parts.shift() || "").toUpperCase(), value = parts.join(" ").trim();
+      if (!value) continue;
+      if (type === "LESSON") result.lesson = value;
+      else if (targets[type] && result[targets[type]].length < 6) result[targets[type]].push(value);
+    }
+    if (!result.goals.length && !result.steps.length && !result.instructions.length) throw new Error("观察计划缺少可读取条目");
+    return result;
+  };
   try {
-    const start = content.indexOf("{"), end = content.lastIndexOf("}");
-    const data = JSON.parse(content.slice(start, end + 1));
-    return json({ lesson: String(data.lesson || file.name.replace(/\.[^.]+$/, "")), goals: (data.goals || []).slice(0, 6), steps: (data.steps || []).slice(0, 6), instructions: (data.instructions || []).slice(0, 6), expected_responses: (data.expected_responses || []).slice(0, 6), generalization_tasks: (data.generalization_tasks || []).slice(0, 6) });
-  } catch { return json({ error: "教案已读取，但观察计划格式不完整，请重试或手工填写" }, 502); }
+    const content = await callMiniMax(env, [{ role: "system", content: system }, { role: "user", content: text.slice(0, 80000) }], 0.1, 4096);
+    let data;
+    try { data = parsePlan(content); }
+    catch {
+      const repair = `把下面的教案观察计划整理成 TAB 分隔文本，不增加事实。只使用 LESSON、GOAL、STEP、INSTRUCTION、RESPONSE、TRANSFER 六种行类型，每行一个条目。\n\n原始内容：\n${String(content || "").slice(0, 18000)}`;
+      data = parsePlan(await callMiniMax(env, [{ role: "user", content: repair }], 0.05, 4096));
+    }
+    data.lesson ||= file.name.replace(/\.[^.]+$/, "");
+    return json(data);
+  } catch { return json({ error: "教案已读取，但 AI 未能整理出观察计划，请点击按钮重试" }, 502); }
 }
 
 export default {
