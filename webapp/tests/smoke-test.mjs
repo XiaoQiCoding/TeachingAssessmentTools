@@ -102,7 +102,7 @@ const demoExportText = new TextDecoder().decode(demoExportBytes);
 if (!demoExportResponse.ok || demoExportBytes[0] !== 0x50 || demoExportBytes[1] !== 0x4b || !demoExportText.includes("核心演示") || !demoExportText.includes("模块 A") || !demoExportText.includes("模块 B") || demoExportText.includes("创新与推广综合加分")) throw new Error("Core demo XLSX export is invalid");
 const indexResponse = await worker.fetch(new Request("https://example.test/"), {});
 const indexHtml = await indexResponse.text();
-if (!indexResponse.ok || !indexHtml.includes("核心 Demo") || !indexHtml.includes("课前适配性评估") || !indexHtml.includes("课堂实施效果评估") || indexHtml.includes("创新推广加分项") || !indexHtml.includes("开始 AI 评估模块 A") || !indexHtml.includes("/api/evaluation/module-a") || !indexHtml.includes("导出 A+B 核心 Excel")) throw new Error("Core demo page is incomplete");
+if (!indexResponse.ok || !indexHtml.includes("核心 Demo") || !indexHtml.includes("课前适配性评估") || !indexHtml.includes("课堂实施效果评估") || indexHtml.includes("创新推广加分项") || !indexHtml.includes("开始 AI 评估模块 A") || !indexHtml.includes("/api/evaluation/module-a") || !indexHtml.includes("导出 A+B 核心 Excel") || !indexHtml.includes("已评分小计")) throw new Error("Core demo page is incomplete");
 const pageResponse = await worker.fetch(new Request("https://example.test/classroom"), {});
 const pageHtml = await pageResponse.text();
 if (!pageResponse.ok || !pageHtml.includes("AI 提取并确认课堂证据") || !pageHtml.includes("AI 分析 · 人工复核") || !pageHtml.includes("restoreDraft") || !pageHtml.includes("下载 Excel 表格") || !pageHtml.includes("评估指标描述") || pageHtml.includes("创新推广加分项")) throw new Error("Classroom demo page was not served with rubric report and draft recovery");
