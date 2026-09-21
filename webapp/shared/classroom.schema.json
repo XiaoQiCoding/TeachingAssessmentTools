@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Classroom implementation evidence and report v1.1",
+  "type": "object",
+  "required": ["version", "kind", "lesson", "status", "summary", "dimensions", "module_b_score", "observed_weighted_score", "scored_weight", "event_count", "audit"],
+  "properties": {
+    "version": {"const": "1.1"},
+    "kind": {"const": "classroom_implementation"},
+    "lesson": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["complete", "partial", "needs_more_evidence"]},
+    "summary": {"type": "string"},
+    "module_b_score": {"type": ["number", "null"], "minimum": 12, "maximum": 60},
+    "observed_weighted_score": {"type": "number", "minimum": 0, "maximum": 60},
+    "scored_weight": {"type": "number", "minimum": 0, "maximum": 60},
+    "score_note": {"type": "string"},
+    "event_count": {"type": "integer", "minimum": 0},
+    "students": {"type": "array", "maxItems": 3},
+    "dimensions": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "criterion", "weight", "max_score", "score", "weighted_score", "status", "finding", "modification", "confidence", "evidence"],
+        "properties": {
+          "id": {"enum": ["B1", "B2", "B3", "B4", "B5"]},
+          "label": {"type": "string"},
+          "criterion": {"type": "string"},
+          "weight": {"const": 12},
+          "max_score": {"const": 5},
+          "score": {"type": ["integer", "null"], "minimum": 1, "maximum": 5},
+          "weighted_score": {"type": ["number", "null"], "minimum": 0, "maximum": 12},
+          "status": {"enum": ["supported", "mixed", "concern", "insufficient_evidence"]},
+          "finding": {"type": "string"},
+          "modification": {"type": "string"},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+        }
+      }
+    },
+    "suggestions": {"type": "array"},
+    "audit": {
+      "type": "object",
+      "required": ["rule_version", "confirmed_event_ids", "video_uploaded"],
+      "properties": {
+        "rule_version": {"const": "classroom-b-v2"},
+        "confirmed_event_ids": {"type": "array", "items": {"type": "string"}},
+        "video_uploaded": {"type": "boolean"},
+        "ai_analysis_used": {"type": "boolean"},
+        "analysis_mode": {"enum": ["manual", "native_video", "sampled_frames"]},
+        "analysis_model": {"type": ["string", "null"]},
+        "candidate_count": {"type": "integer", "minimum": 0},
+        "confirmed_ai_event_ids": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "required": ["event_id", "time", "student_id", "observation", "confidence"],
+      "properties": {
+        "event_id": {"type": "string"}, "time": {"type": "string"}, "student_id": {"type": "string"},
+        "observation": {"type": "string"}, "confidence": {"enum": ["high", "medium", "low"]}
+      }
+    }
+  }
+}

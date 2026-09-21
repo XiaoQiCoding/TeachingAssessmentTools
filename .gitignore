@@ -3,6 +3,8 @@
 
 # Generated and temporary files
 outputs/
+/.codex-temp/
+/test/
 webapp/dist/
 webapp/.deploy-package/
 webapp/node_modules/

@@ -1,11 +1,16 @@
 import fs from "node:fs";
 
 const html = fs.readFileSync("frontend/index.html", "utf8");
-const start = html.lastIndexOf("<script>");
-const end = html.lastIndexOf("</script>");
-if (start < 0 || end <= start) throw new Error("Client script not found");
-new Function(html.slice(start + 8, end));
+const classroomHtml = fs.readFileSync("frontend/classroom.html", "utf8");
+for (const [name, page] of [["index", html], ["classroom", classroomHtml]]) {
+  const start = page.lastIndexOf("<script>");
+  const end = page.lastIndexOf("</script>");
+  if (start < 0 || end <= start) throw new Error(`${name} client script not found`);
+  new Function(page.slice(start + 8, end));
+}
 JSON.parse(fs.readFileSync("shared/evaluation.schema.json", "utf8"));
+JSON.parse(fs.readFileSync("shared/classroom.schema.json", "utf8"));
+JSON.parse(fs.readFileSync("shared/evaluation-record.schema.json", "utf8"));
 for (const file of [
   "skills/special-education-preclass/SKILL.md",
   "skills/special-education-postclass/SKILL.md"

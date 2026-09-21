@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/evaluation-record.schema.json",
+  "title": "孤独症儿童主题式教学教具学具评估记录",
+  "type": "object",
+  "required": ["id", "version", "basic", "module_a", "module_b", "module_c", "summary"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "version": { "const": "1.0" },
+    "basic": {
+      "type": "object",
+      "required": ["tool_name", "themes", "goals", "teacher", "evaluator", "evaluation_date", "class_name", "presentations"],
+      "properties": {
+        "tool_name": { "type": "string" },
+        "themes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "goals": { "type": "string" },
+        "teacher": { "type": "string" },
+        "evaluator": { "type": "string" },
+        "evaluation_date": { "type": "string" },
+        "class_name": { "type": "string" },
+        "presentations": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "module_a": {
+      "type": "object",
+      "required": ["A1", "A2", "A3", "A4", "A5"],
+      "properties": {
+        "A1": { "$ref": "#/$defs/scoredItem" },
+        "A2": { "$ref": "#/$defs/scoredItem" },
+        "A3": { "$ref": "#/$defs/scoredItem" },
+        "A4": { "$ref": "#/$defs/scoredItem" },
+        "A5": { "$ref": "#/$defs/scoredItem" }
+      },
+      "additionalProperties": false
+    },
+    "module_a_meta": { "type": ["object", "null"] },
+    "module_b": {
+      "type": "object",
+      "required": ["report", "events"],
+      "properties": {
+        "report": { "type": ["object", "null"] },
+        "events": { "type": "array", "items": { "type": "object" } },
+        "analysis_info": { "type": ["object", "null"] }
+      }
+    },
+    "module_c": {
+      "type": "object",
+      "required": ["score", "evidence"],
+      "properties": {
+        "score": { "type": "number", "minimum": 0, "maximum": 10 },
+        "evidence": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "summary": { "type": "object" }
+  },
+  "$defs": {
+    "scoredItem": {
+      "type": "object",
+      "required": ["score", "evidence", "modification"],
+      "properties": {
+        "score": { "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 5 }, { "const": "" }] },
+        "evidence": { "type": "string" },
+        "modification": { "type": "string" },
+        "status": { "enum": ["supported", "mixed", "concern", "unknown"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}
