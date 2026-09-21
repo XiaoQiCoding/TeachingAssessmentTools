@@ -14,7 +14,7 @@ globalThis.fetch = async (_url, options) => {
     content: [{ type: "text", text: JSON.stringify({ summary: "发现一条候选证据", candidates: [{ start_seconds: 5, end_seconds: 12, phase: "tool_use", type: "response", student_id: "待确认", outcome: "positive", assistance: "gesture", confidence: "medium", note: "学生在手势提示后完成操作", reason: "对应课堂目标" }] }) }]
   }), { headers: { "content-type": "application/json" } });
   if (String(body.messages.at(-1).content).includes("模块 A 量表")) return new Response(JSON.stringify({
-    choices: [{ message: { content: JSON.stringify({ summary: "模块 A AI 评估完成", dimensions: ["A1", "A2", "A3", "A4", "A5"].map((id, index) => ({ id, score: index === 3 ? 5 : 4, status: "supported", evidence: `测试材料中的 ${id} 客观证据`, modification: `${id} 修改建议` })) }) } }], base_resp: { status_code: 0, status_msg: "success" }
+    choices: [{ message: { content: `SUMMARY\t模块 A AI 评估完成\n${["A1", "A2", "A3", "A4", "A5"].map((id, index) => `A\t${id}\t${index === 3 ? 5 : 4}\tsupported\t测试材料中的 ${id} 客观证据\t${id} 修改建议`).join("\n")}` } }], base_resp: { status_code: 0, status_msg: "success" }
   }), { headers: { "content-type": "application/json" } });
   return new Response(JSON.stringify({
     choices: [{ message: { content: "META\tpre\tpartial\t测试课程\nSUMMARY\t测试完成\nTOOL\t测试教具\t测试目标\t测试活动\t教师描述\nDIM\talignment\tsupported\t教具与目标匹配\t教师描述\nDIM\tadequacy\tmixed\t数量待确认\t教师描述\nDIM\toutcomes\tnot_applicable\t课前不适用\t未提供\nDIM\tinnovation_feedback\tunknown\t未提供\t未提供\nDIM\tawards\tunknown\t未提供\t未提供\nSUG\thigh\tadequacy\t测试教具\t数量不明\t补充数量\t教案\t观察参与率\t教师描述" } }], base_resp: { status_code: 0, status_msg: "success" }

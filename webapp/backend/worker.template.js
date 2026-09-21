@@ -382,8 +382,25 @@ const MODULE_A_CRITERIA = {
 function parseModuleAResult(content, sourceNames, model) {
   const cleaned = String(content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
   const start = cleaned.indexOf("{"), end = cleaned.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("模型没有返回可读取的模块 A 结果");
-  const raw = JSON.parse(cleaned.slice(start, end + 1));
+  let raw = null;
+  if (start >= 0 && end > start) {
+    try { raw = JSON.parse(cleaned.slice(start, end + 1)); }
+    catch {
+      try { raw = JSON.parse(escapeControlsInStrings(cleaned.slice(start, end + 1)).replace(/,\s*([}\]])/g, "$1")); } catch {}
+    }
+  }
+  if (!raw) {
+    raw = { summary: "", dimensions: [] };
+    for (const line of cleaned.split(/\r?\n/)) {
+      let parts = line.trim().replace(/^[-*]\s*/, "").split("\t").map(value => value.trim());
+      if (parts.length < 2 && line.includes("|")) parts = line.split("|").map(value => value.trim()).filter(Boolean);
+      const type = String(parts.shift() || "").toUpperCase();
+      if (type === "SUMMARY") raw.summary = parts.join(" ");
+      else if (type === "A" && /^A[1-5]$/.test(String(parts[0] || "").toUpperCase())) raw.dimensions.push({ id: parts[0], score: parts[1], status: parts[2], evidence: parts[3], modification: parts.slice(4).join(" ") });
+      else if (/^A[1-5]$/.test(type)) raw.dimensions.push({ id: type, score: parts[0], status: parts[1], evidence: parts[2], modification: parts.slice(3).join(" ") });
+    }
+  }
+  if (!Array.isArray(raw.dimensions) || !raw.dimensions.length) throw new Error("模型没有返回可读取的模块 A 结果");
   const byId = new Map((Array.isArray(raw.dimensions) ? raw.dimensions : []).map(item => [String(item?.id || "").toUpperCase(), item]));
   const dimensions = Object.entries(MODULE_A_CRITERIA).map(([id, definition]) => {
     const item = byId.get(id) || {}, numeric = Number(item.score);
@@ -421,12 +438,18 @@ async function evaluateModuleA(request, env) {
     } catch (error) { limitations.push(`${file.name}：${error instanceof Error ? error.message : "解析失败"}`); }
   }
   const rubric = Object.entries(MODULE_A_CRITERIA).map(([id, item]) => `${id} ${item.label}：${item.criterion}`).join("\n");
-  const prompt = `你是孤独症儿童主题式教学教具学具评估助手。请只依据提供的课前材料，严格按照以下模块 A 量表逐项评分，不得编造。\n${rubric}\n评分锚点：5完全达成且可示范；4基本达成仅少量微调；3大体达成但有明显不足；2达成度低需大幅调整；1完全不达标或存在安全风险/严重不适配。每项权重8%。每个有分数的项目必须给出材料中可核对的客观证据，包含文件名及具体内容位置或图片事实；证据不足时 score 必须为 null。A4 必须核查小零件、尖角、材质、消毒、投掷撕毁风险；不能仅凭教案未提及安全问题就给高分。只返回有效 JSON：{"summary":"总体结论","dimensions":[{"id":"A1","score":1到5或null,"status":"supported|mixed|concern|unknown","evidence":"客观证据","modification":"修改意见"}]}，必须依次包含 A1 至 A5。\n基础信息：${JSON.stringify({ tool_name: basic.tool_name || "", themes: basic.themes || [], goals: basic.goals || "", class_name: basic.class_name || "", presentations: basic.presentations || [] })}\n补充说明：${description || "未提供"}\n解析限制：${limitations.join("；") || "无"}\n材料正文：\n${textMaterials.join("\n\n").slice(0, 140000) || "无文字材料；请结合随后提供的图片。"}`;
+  const prompt = `你是孤独症儿童主题式教学教具学具评估助手。请只依据提供的课前材料，严格按照以下模块 A 量表逐项评分，不得编造。\n${rubric}\n评分锚点：5完全达成且可示范；4基本达成仅少量微调；3大体达成但有明显不足；2达成度低需大幅调整；1完全不达标或存在安全风险/严重不适配。每项权重8%。每个有分数的项目必须给出材料中可核对的客观证据，包含文件名及具体内容位置或图片事实；证据不足时分数写 null。A4 必须核查小零件、尖角、材质、消毒、投掷撕毁风险；不能仅凭教案未提及安全问题就给高分。不要输出 JSON、Markdown、代码围栏或思考过程。只按下面六行格式输出，字段之间使用真实 TAB 制表符，字段内容中不得换行：\nSUMMARY<TAB>120字内总体结论\nA<TAB>A1<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见\nA<TAB>A2<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见\nA<TAB>A3<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见\nA<TAB>A4<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见\nA<TAB>A5<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见\n输出时用真实制表符替换 <TAB>。\n基础信息：${JSON.stringify({ tool_name: basic.tool_name || "", themes: basic.themes || [], goals: basic.goals || "", class_name: basic.class_name || "", presentations: basic.presentations || [] })}\n补充说明：${description || "未提供"}\n解析限制：${limitations.join("；") || "无"}\n材料正文：\n${textMaterials.join("\n\n").slice(0, 140000) || "无文字材料；请结合随后提供的图片。"}`;
   const content = [{ type: "text", text: prompt }];
   for (const image of imageFiles.slice(0, 10)) content.push({ type: "text", text: `[实物或材料图片：${image.name}]` }, { type: "image", source: { type: "base64", media_type: image.type, data: bytesToBase64(await image.arrayBuffer()) } });
   try {
     const output = imageFiles.length ? await callMiniMaxMedia(env, content) : await callMiniMax(env, [{ role: "user", content: prompt }], 0.1);
-    return json(parseModuleAResult(output, files.map(file => file.name), env.MINIMAX_MODEL || "MiniMax-M3"));
+    let result;
+    try { result = parseModuleAResult(output, files.map(file => file.name), env.MINIMAX_MODEL || "MiniMax-M3"); }
+    catch {
+      const repair = `把下面的模块 A 评估内容整理成六行 TAB 分隔文本。不得增加事实。只输出 SUMMARY 行和 A1 至 A5 五行；格式为 A<TAB>编号<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见。\n\n原始内容：\n${String(output || "").slice(0, 18000)}`;
+      result = parseModuleAResult(await callMiniMax(env, [{ role: "user", content: repair }], 0.05), files.map(file => file.name), env.MINIMAX_MODEL || "MiniMax-M3");
+    }
+    return json(result);
   } catch (error) { return json({ error: error instanceof Error ? error.message : "模块 A AI 评估失败" }, 502); }
 }
 
