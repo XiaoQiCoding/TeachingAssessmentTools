@@ -478,9 +478,10 @@ function evidenceConfidence(events, preferredCount = 3) {
 }
 function weightedScore(score) { return score == null ? null : Math.round(score / 5 * 12 * 10) / 10; }
 function dimension(id, label, score, finding, events, modification, preferredCount = 3) {
+  const noEvidence = score == null, finalScore = noEvidence ? 0 : score;
   return {
-    id, label, criterion: CLASSROOM_CRITERIA[id], weight: 12, max_score: 5, score, weighted_score: weightedScore(score),
-    status: score == null ? "insufficient_evidence" : score >= 4 ? "supported" : score >= 3 ? "mixed" : "concern",
+    id, label, criterion: CLASSROOM_CRITERIA[id], weight: 12, max_score: 5, score: finalScore, weighted_score: weightedScore(finalScore),
+    status: noEvidence ? "insufficient_evidence" : score >= 4 ? "supported" : score >= 3 ? "mixed" : "concern",
     finding, modification, confidence: evidenceConfidence(events, preferredCount), evidence: evidenceFor(events)
   };
 }
@@ -549,17 +550,17 @@ function buildClassroomReport(payload) {
     dimension("B4", "技能习得与泛化", b4Score, generalization.length ? `在更换材料、场景或延迟任务中记录 ${generalization.length} 次迁移机会，成功比例为 ${(generalizationSuccess * 100).toFixed(0)}%；评分同时考虑辅助程度。` : "未确认更换材料、场景或延迟任务后的迁移表现；重复原任务不作为泛化证据。", generalization, generalization.length ? (b4Score < 4 ? "增加不同材料或生活情境的迁移练习，并记录是否独立完成。" : "继续在不同场景复核技能能否稳定迁移。") : "补充至少一条真实迁移任务中的表现记录。", 2),
     dimension("B5", "情绪行为影响", b5Score, toolEmotion.length ? (b5Delta == null ? `记录到 ${toolEmotion.length} 条教具使用中的可观察情绪或回避行为；缺少使用前基准，本项按本次课堂表现评分。` : `记录到使用前 ${baseEmotion.length} 条、使用中 ${toolEmotion.length} 条情绪或回避证据，负向事件比例${b5Delta >= 0 ? "下降或持平" : "上升"}。`) : "未确认教具使用中的可观察情绪或回避行为，本项暂不评分；不能用面部表情推测内心情绪。", [...baseEmotion, ...toolEmotion], toolEmotion.length ? (b5Score < 4 ? "调整刺激强度、等待时间或替代选择，下次记录行为发生频次与持续时间。" : "保留当前支持方式，并继续观察情绪稳定性。") : "补充至少一条教具使用中的可观察情绪或回避行为记录。", 2)
   ];
-  const scored = dimensions.filter(item => item.score != null);
-  const scoredWeight = scored.reduce((sum, item) => sum + item.weight, 0);
-  const observedWeightedScore = Math.round(scored.reduce((sum, item) => sum + item.weighted_score, 0) * 10) / 10;
-  const moduleScore = scored.length === 5 ? observedWeightedScore : null;
-  const suggestions = dimensions.filter(item => item.score == null || item.score < 4).map(item => ({ dimension_id: item.id, priority: item.score == null ? "evidence" : item.score <= 2 ? "high" : "medium", action: item.modification })).slice(0, 5);
+  const evidenced = dimensions.filter(item => item.status !== "insufficient_evidence"), missing = dimensions.filter(item => item.status === "insufficient_evidence");
+  const scoredWeight = evidenced.reduce((sum, item) => sum + item.weight, 0);
+  const observedWeightedScore = Math.round(dimensions.reduce((sum, item) => sum + item.weighted_score, 0) * 10) / 10;
+  const moduleScore = observedWeightedScore;
+  const suggestions = dimensions.filter(item => item.status === "insufficient_evidence" || item.score < 4).map(item => ({ dimension_id: item.id, priority: item.status === "insufficient_evidence" ? "evidence" : item.score <= 2 ? "high" : "medium", action: item.modification })).slice(0, 5);
   return {
     version: "1.1", kind: "classroom_implementation", lesson, generated_at: new Date().toISOString(),
-    status: scored.length === 5 ? "complete" : scored.length ? "partial" : "needs_more_evidence",
-    summary: scored.length ? `已依据 ${events.length} 条教师确认事件，对 ${scored.length} 个维度按量表给出 1-5 分及加权分。${5 - scored.length ? `另有 ${5 - scored.length} 个维度没有直接证据，保留空分。` : ""}` : "当前事件与 B1 至 B5 均未形成直接对应，尚不能给出评分建议。",
+    status: evidenced.length === 5 ? "complete" : evidenced.length ? "partial" : "needs_more_evidence",
+    summary: evidenced.length ? `已依据 ${events.length} 条教师确认事件，对 ${evidenced.length} 个维度按量表给出 1-5 分；${missing.length ? `另有 ${missing.length} 个维度没有直接证据，按 0 分计入模块总分。` : "五个维度均有直接证据。"}` : "当前事件与 B1 至 B5 均未形成直接对应，五个维度均按 0 分计入模块总分。",
     dimensions, module_b_score: moduleScore, observed_weighted_score: observedWeightedScore, scored_weight: scoredWeight,
-    score_note: moduleScore == null ? `已评分维度的加权得分为 ${observedWeightedScore}/${scoredWeight}；因仍有空分，暂不计算 60 分制模块 B 总分。证据不足不按低分处理。` : "五个维度均按 1-5 分评分，每项按 12 分折算，模块 B 满分 60 分；正式结论须由评估人复核确认。",
+    score_note: missing.length ? `模块 B 总分为 ${moduleScore}/60；${missing.map(item => item.id).join("、")} 没有直接证据，按 0 分计入。0 分表示未取得证据，不等同于已观察到不合格表现。` : "五个维度均按 1-5 分评分，每项按 12 分折算，模块 B 满分 60 分；正式结论须由评估人复核确认。",
     event_count: events.length, students, suggestions,
     audit: {
       rule_version: "classroom-b-v2", confirmed_event_ids: events.map(e => e.id),
@@ -646,7 +647,8 @@ function buildClassroomWorkbook(payload, report) {
       excelCell(`H${row}`, item.weighted_score, 5, `IF(E${row}="","",E${row}/5*D${row})`)
     ], 66));
   });
-  rows.push(excelRow(11, [excelCell("A11", "模块 B 小计", 6), excelCell("D11", 60, 6), excelCell("E11", report.module_b_score == null ? "待补证" : "五项完成", 6), excelCell("F11", `已评分 ${report.dimensions.filter(item => item.score != null).length}/5 项`, 6), excelCell("G11", report.module_b_score == null ? "补齐空分后形成 60 分制模块总分" : "请由评估人复核确认", 6), excelCell("H11", report.observed_weighted_score, 6, "SUM(H6:H10)")], 28));
+  const evidencedCount = report.dimensions.filter(item => item.status !== "insufficient_evidence").length, zeroEvidenceIds = report.dimensions.filter(item => item.status === "insufficient_evidence").map(item => item.id);
+  rows.push(excelRow(11, [excelCell("A11", "模块 B 总分", 6), excelCell("D11", 60, 6), excelCell("E11", `${evidencedCount}/5 项有证据`, 6), excelCell("F11", report.summary, 6), excelCell("G11", zeroEvidenceIds.length ? `${zeroEvidenceIds.join("、")} 无证据按 0 分计` : "请由评估人复核确认", 6), excelCell("H11", report.module_b_score, 6, "SUM(H6:H10)")], 28));
   rows.push(excelRow(13, [excelCell("A13", "评分说明", 7), excelCell("B13", report.score_note, 3)], 42));
   const reportSheet = worksheetXml(rows, [9, 18, 36, 11, 12, 48, 42, 14], ["A1:H1", "B2:H2", "B3:C3", "E3:H3", "A11:C11", "B13:H13"], 5);
 

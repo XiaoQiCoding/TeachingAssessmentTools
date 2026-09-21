@@ -27,7 +27,7 @@ webapp/
 
 网站使用量表原名“课前适配性评估”和“课堂实施效果评估”，并增加“创新推广加分项”。模块 B 使用独立工作页 `/classroom`，按“教案观察计划、选择本机视频、AI 提取候选节点、评委确认、生成 B1 至 B5 量表报告”运行。20MB 以内的视频通过 Anthropic 兼容接口交给 MiniMax M3 原生分析；较大视频由浏览器抽取最多 36 张带真实时间戳的 JPEG 关键帧后分析。模型只生成候选节点，默认不参与评分；评委勾选、修改或补充后形成正式事件。事件包含阶段、类型、匿名学生编号、结果、辅助等级、时间、事实描述、置信度和来源。
 
-`POST /api/evaluation/module-a` 接收课前文字材料和图片并返回严格对应量表的 A1–A5 结果；`POST /api/classroom/plan` 从教案提取观察计划；`POST /api/classroom/video-candidates` 接收短视频或关键帧并返回候选节点；`POST /api/classroom/report` 不依赖模型，使用 `classroom-b-v2` 固定规则处理评委确认后的事件；`POST /api/classroom/export` 生成模块 B Excel；`POST /api/evaluation/export` 根据当前完整评估记录导出模块 A、模块 B、模块 C 或完整量表 Excel。B1 至 B5 只要出现至少一条直接对应事实即可形成低置信度评分建议，更多样本会提高置信度；没有对应事实时才返回空分，不把未知当作低分。完整模块 B 总分仅在五项均有分数时生成。
+`POST /api/evaluation/module-a` 接收课前文字材料和图片并返回严格对应量表的 A1–A5 结果；`POST /api/classroom/plan` 从教案提取观察计划；`POST /api/classroom/video-candidates` 接收短视频或关键帧并返回候选节点；`POST /api/classroom/report` 不依赖模型，使用 `classroom-b-v2` 固定规则处理评委确认后的事件；`POST /api/classroom/export` 生成模块 B Excel；`POST /api/evaluation/export` 根据当前完整评估记录导出模块 A、模块 B、模块 C 或完整量表 Excel。B1 至 B5 只要出现至少一条直接对应事实即可形成 1 至 5 分评分；没有对应事实的维度显示 0 分并按 0 计入 60 分制模块总分，同时保留 `insufficient_evidence` 状态，明确 0 分表示未取得证据，不等同于已观察到不合格表现。
 
 ## 服务端调用流程
 
