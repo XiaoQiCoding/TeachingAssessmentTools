@@ -731,9 +731,9 @@ function buildEvaluationWorkbook(record, module = "full") {
     addSection("五、量表配套评分锚点说明"); ["5 分（优秀）：指标完全达成，超出预期，可以作为示范教具；", "4 分（良好）：指标基本达成，仅少量细节需要微调；", "3 分（合格）：指标大体达成，存在明显不足，修改后可以使用；", "2 分（待改进）：指标达成度低，需要大幅度重新调整；", "1 分（不合格）：完全不达标，存在安全风险 / 严重不适配，禁止课堂使用。"].forEach(text => { rows.push(excelRow(row, [excelCell(`A${row}`, text, 3)], 23)); merges.push(`A${row}:H${row}`); row++; }); row++;
     addSection("六、评估原则"); ["1. 所有打分必须填写客观证据记录，写课堂观察事实，禁止单纯主观感受；", "2. 安全一票否决：模块 A4 安全项打 1 分，直接判定整体不合格，禁止用于教学；", "3. 本量表服务课题闭环：设计 — 实施 — 反馈 — 优化，评估结果用于迭代教具与主题教学活动。"].forEach(text => { rows.push(excelRow(row, [excelCell(`A${row}`, text, 3)], 25)); merges.push(`A${row}:H${row}`); row++; });
   };
-  const title = module === "A" ? "模块 A 课前适配性评估" : module === "C" ? "模块 C 创新推广加分项" : "孤独症儿童主题式教学·教具学具完整评估表";
-  addTitle(title); addBasic(); if (module === "A") addA(); else if (module === "C") addC(); else { addA(); addB(); addC(); addSummary(); }
-  return oneSheetWorkbook(module === "A" ? "课前适配性评估" : module === "C" ? "创新推广加分项" : "完整评估表", title, worksheetXml(rows, [10, 20, 39, 11, 12, 48, 42, 14], merges, 0), record.updated_at || new Date().toISOString());
+  const title = module === "A" ? "模块 A 课前适配性评估" : module === "C" ? "模块 C 创新推广加分项" : module === "demo" ? "核心演示评估表（模块 A + 模块 B）" : "孤独症儿童主题式教学·教具学具完整评估表";
+  addTitle(title); addBasic(); if (module === "A") addA(); else if (module === "C") addC(); else if (module === "demo") { addA(); addB(); } else { addA(); addB(); addC(); addSummary(); }
+  return oneSheetWorkbook(module === "A" ? "课前适配性评估" : module === "C" ? "创新推广加分项" : module === "demo" ? "核心演示" : "完整评估表", title, worksheetXml(rows, [10, 20, 39, 11, 12, 48, 42, 14], merges, 0), record.updated_at || new Date().toISOString());
 }
 
 async function evaluationExport(request) {
@@ -745,8 +745,8 @@ async function evaluationExport(request) {
     const report = record.module_b?.report && Array.isArray(record.module_b.report.dimensions) ? record.module_b.report : buildClassroomReport(classroomPayload);
     return new Response(buildClassroomWorkbook(classroomPayload, report), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": "attachment; filename=classroom-module-b.xlsx", "cache-control": "no-store" } });
   }
-  const normalizedModule = module === "A" || module === "C" ? module : "full";
-  return new Response(buildEvaluationWorkbook(record, normalizedModule), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": `attachment; filename=${normalizedModule === "A" ? "module-a" : normalizedModule === "C" ? "module-c" : "complete-evaluation"}.xlsx`, "cache-control": "no-store" } });
+  const normalizedModule = ["A", "C", "demo"].includes(module) ? module : "full";
+  return new Response(buildEvaluationWorkbook(record, normalizedModule), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": `attachment; filename=${normalizedModule === "A" ? "module-a" : normalizedModule === "C" ? "module-c" : normalizedModule === "demo" ? "core-demo-a-b" : "complete-evaluation"}.xlsx`, "cache-control": "no-store" } });
 }
 
 async function classroomReport(request) {
