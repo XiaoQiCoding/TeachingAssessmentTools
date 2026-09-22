@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Classroom implementation evidence and report v1.1",
+  "title": "Classroom implementation evidence and report v1.2",
   "type": "object",
   "required": ["version", "kind", "lesson", "status", "summary", "dimensions", "module_b_score", "observed_weighted_score", "scored_weight", "event_count", "audit"],
   "properties": {
-    "version": {"const": "1.1"},
+    "version": {"const": "1.2"},
     "kind": {"const": "classroom_implementation"},
     "lesson": {"type": "string"},
     "generated_at": {"type": "string", "format": "date-time"},
@@ -42,7 +42,7 @@
       "type": "object",
       "required": ["rule_version", "confirmed_event_ids", "video_uploaded"],
       "properties": {
-        "rule_version": {"const": "classroom-b-v2"},
+        "rule_version": {"const": "classroom-b-v3"},
         "confirmed_event_ids": {"type": "array", "items": {"type": "string"}},
         "video_uploaded": {"type": "boolean"},
         "ai_analysis_used": {"type": "boolean"},
