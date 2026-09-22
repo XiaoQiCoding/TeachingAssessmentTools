@@ -220,13 +220,13 @@ function escapeControlsInStrings(source) {
   return output;
 }
 
-async function callMiniMax(env, messages, temperature = 0.2) {
+async function callMiniMax(env, messages, temperature = 0.2, maxCompletionTokens = 2048) {
   const apiBase = String(env.MINIMAX_API_BASE || "https://api.minimaxi.com/v1").replace(/\/$/, "");
   const model = env.MINIMAX_MODEL || "MiniMax-M3";
   const response = await fetch(`${apiBase}/chat/completions`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${env.MINIMAX_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, temperature, top_p: 0.9, max_completion_tokens: 2048 })
+    body: JSON.stringify({ model, messages, temperature, top_p: 0.9, max_completion_tokens: maxCompletionTokens })
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(`MiniMax 接口请求失败（${response.status}）`);
@@ -285,7 +285,7 @@ async function analyzeClassroomVideo(request, env) {
   const lesson = String(form.get("lesson") || "未命名课程").slice(0, 200);
   const goals = String(form.get("goals") || "未提供").slice(0, 6000);
   const instructions = String(form.get("instructions") || "未提供").slice(0, 6000);
-  const prompt = `你是特殊教育课堂视频的候选证据提取助手。课程：${lesson}。\n可观察目标：${goals}\n关键指令和预期反应：${instructions}\n视频真实时长：${duration.toFixed(2)} 秒。\n只记录画面或声音中可观察到的事实，不根据面部表情推断内心情绪，不识别人脸身份；无法确认学生编号时写“待确认”。将相近行为合并，最多30条。候选节点只是给评委复核，不能直接评分。${mode === "video" ? "模型可能对视频稀疏采样；请依据提供的真实时长换算并返回实际视频秒数。" : "随后图片按时间顺序提供，每张图片前都有真实视频时间；只能依据这些采样画面提出候选，不要补写两帧之间未观察到的行为。"}\n只返回有效 JSON：{"summary":"简短说明","candidates":[{"start_seconds":12.3,"end_seconds":20.0,"phase":"baseline|tool_use|generalization","type":"instruction|response|engagement|avoidance|operation|generalization|emotion","student_id":"待确认或匿名编号","outcome":"positive|negative|neutral","assistance":"independent|gesture|verbal|model|physical|none","confidence":"high|medium|low","note":"客观事实","reason":"对应目标或指令"}]}。`;
+  const prompt = `你是特殊教育课堂视频的候选证据提取助手。课程：${lesson}。\n可观察目标：${goals}\n关键指令和预期反应：${instructions}\n视频真实时长：${duration.toFixed(2)} 秒。\n评分口径从宽：学生达到教学要求即可视为良好达成。只记录画面或声音中可观察到的事实；允许依据微笑、放松、专注、皱眉、哭泣等可观察面部表情，结合哭闹、尖叫、回避等行为判断情绪状态，但不要推断无法观察的内心想法，也不要识别人脸身份。无法确认学生编号时写“待确认”。如果可观察范围内整节课没有哭闹、尖叫、明显痛苦表情或持续回避，必须增加一条 type=emotion、outcome=positive 的候选，客观记录“学生整体表情平稳，未见哭闹或尖叫”。将相近行为合并，最多30条。候选节点只是给评委复核，不能直接评分。${mode === "video" ? "模型可能对视频稀疏采样；请依据提供的真实时长换算并返回实际视频秒数。" : "随后图片按时间顺序提供，每张图片前都有真实视频时间；只能依据这些采样画面提出候选，并在情绪记录中注明依据为抽样画面。"}\n只返回有效 JSON：{"summary":"简短说明","candidates":[{"start_seconds":12.3,"end_seconds":20.0,"phase":"baseline|tool_use|generalization","type":"instruction|response|engagement|avoidance|operation|generalization|emotion","student_id":"待确认或匿名编号","outcome":"positive|negative|neutral","assistance":"independent|gesture|verbal|model|physical|none","confidence":"high|medium|low","note":"客观事实","reason":"对应目标或指令"}]}。`;
   const content = [{ type: "text", text: prompt }];
   if (mode === "video") {
     const video = form.get("video");
@@ -362,7 +362,7 @@ async function evaluate(request, env) {
 
 const CLASSROOM_TYPES = new Set(["instruction", "response", "engagement", "avoidance", "operation", "generalization", "emotion"]);
 const CLASSROOM_PHASES = new Set(["baseline", "tool_use", "generalization"]);
-const ASSISTANCE_WEIGHT = { independent: 1, gesture: 0.8, verbal: 0.65, model: 0.45, physical: 0.2, none: 0 };
+const ASSISTANCE_WEIGHT = { independent: 1, gesture: 1, verbal: 0.95, model: 0.85, physical: 0.7, none: 0.8 };
 const CLASSROOM_CRITERIA = {
   B1: "使用教具后学生注意力、主动参与行为变化；回避、抗拒教具的发生频次",
   B2: "借助教具，学生是否更容易理解概念、听懂课堂指令，降低理解难度",
@@ -382,8 +382,25 @@ const MODULE_A_CRITERIA = {
 function parseModuleAResult(content, sourceNames, model) {
   const cleaned = String(content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
   const start = cleaned.indexOf("{"), end = cleaned.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("模型没有返回可读取的模块 A 结果");
-  const raw = JSON.parse(cleaned.slice(start, end + 1));
+  let raw = null;
+  if (start >= 0 && end > start) {
+    try { raw = JSON.parse(cleaned.slice(start, end + 1)); }
+    catch {
+      try { raw = JSON.parse(escapeControlsInStrings(cleaned.slice(start, end + 1)).replace(/,\s*([}\]])/g, "$1")); } catch {}
+    }
+  }
+  if (!raw) {
+    raw = { summary: "", dimensions: [] };
+    for (const line of cleaned.split(/\r?\n/)) {
+      let parts = line.trim().replace(/^[-*]\s*/, "").split("\t").map(value => value.trim());
+      if (parts.length < 2 && line.includes("|")) parts = line.split("|").map(value => value.trim()).filter(Boolean);
+      const type = String(parts.shift() || "").toUpperCase();
+      if (type === "SUMMARY") raw.summary = parts.join(" ");
+      else if (type === "A" && /^A[1-5]$/.test(String(parts[0] || "").toUpperCase())) raw.dimensions.push({ id: parts[0], score: parts[1], status: parts[2], evidence: parts[3], modification: parts.slice(4).join(" ") });
+      else if (/^A[1-5]$/.test(type)) raw.dimensions.push({ id: type, score: parts[0], status: parts[1], evidence: parts[2], modification: parts.slice(3).join(" ") });
+    }
+  }
+  if (!Array.isArray(raw.dimensions) || !raw.dimensions.length) throw new Error("模型没有返回可读取的模块 A 结果");
   const byId = new Map((Array.isArray(raw.dimensions) ? raw.dimensions : []).map(item => [String(item?.id || "").toUpperCase(), item]));
   const dimensions = Object.entries(MODULE_A_CRITERIA).map(([id, definition]) => {
     const item = byId.get(id) || {}, numeric = Number(item.score);
@@ -421,19 +438,25 @@ async function evaluateModuleA(request, env) {
     } catch (error) { limitations.push(`${file.name}：${error instanceof Error ? error.message : "解析失败"}`); }
   }
   const rubric = Object.entries(MODULE_A_CRITERIA).map(([id, item]) => `${id} ${item.label}：${item.criterion}`).join("\n");
-  const prompt = `你是孤独症儿童主题式教学教具学具评估助手。请只依据提供的课前材料，严格按照以下模块 A 量表逐项评分，不得编造。\n${rubric}\n评分锚点：5完全达成且可示范；4基本达成仅少量微调；3大体达成但有明显不足；2达成度低需大幅调整；1完全不达标或存在安全风险/严重不适配。每项权重8%。每个有分数的项目必须给出材料中可核对的客观证据，包含文件名及具体内容位置或图片事实；证据不足时 score 必须为 null。A4 必须核查小零件、尖角、材质、消毒、投掷撕毁风险；不能仅凭教案未提及安全问题就给高分。只返回有效 JSON：{"summary":"总体结论","dimensions":[{"id":"A1","score":1到5或null,"status":"supported|mixed|concern|unknown","evidence":"客观证据","modification":"修改意见"}]}，必须依次包含 A1 至 A5。\n基础信息：${JSON.stringify({ tool_name: basic.tool_name || "", themes: basic.themes || [], goals: basic.goals || "", class_name: basic.class_name || "", presentations: basic.presentations || [] })}\n补充说明：${description || "未提供"}\n解析限制：${limitations.join("；") || "无"}\n材料正文：\n${textMaterials.join("\n\n").slice(0, 140000) || "无文字材料；请结合随后提供的图片。"}`;
+  const prompt = `你是孤独症儿童主题式教学教具学具评估助手。请只依据提供的课前材料，按照以下模块 A 量表逐项评分，不得编造。\n${rubric}\n采用宽松、鼓励改进的扣分制：每项从 5 分起评，材料体现指标要求即可给 5 分，不要求额外“超出预期”；只有材料中出现明确、可观察的问题时才扣分。4 分为存在一处轻微不足，3 分为存在明显不足但可使用，2 分为需要大幅调整，1 分为明确不合格。A4 安全项同样从 5 分起评：只有看到或读到小零件、尖角、不安全材质、无法消毒、容易投掷撕毁等具体风险时才扣分；材料未出现具体危险时给 5 分，不因说明不够详细而推测风险。每项权重8%。证据写材料中支持评分的具体事实；修改意见只在扣分时填写，5 分时留空。不要输出 JSON、Markdown、代码围栏或思考过程。只按下面六行格式输出，字段之间使用真实 TAB 制表符，字段内容中不得换行：\nSUMMARY<TAB>120字内总体结论\nA<TAB>A1<TAB>1到5<TAB>supported|mixed|concern<TAB>客观证据<TAB>修改意见或留空\nA<TAB>A2<TAB>1到5<TAB>supported|mixed|concern<TAB>客观证据<TAB>修改意见或留空\nA<TAB>A3<TAB>1到5<TAB>supported|mixed|concern<TAB>客观证据<TAB>修改意见或留空\nA<TAB>A4<TAB>1到5<TAB>supported|mixed|concern<TAB>客观证据<TAB>修改意见或留空\nA<TAB>A5<TAB>1到5<TAB>supported|mixed|concern<TAB>客观证据<TAB>修改意见或留空\n输出时用真实制表符替换 <TAB>。\n基础信息：${JSON.stringify({ tool_name: basic.tool_name || "", themes: basic.themes || [], goals: basic.goals || "", class_name: basic.class_name || "", presentations: basic.presentations || [] })}\n补充说明：${description || "未提供"}\n解析限制：${limitations.join("；") || "无"}\n材料正文：\n${textMaterials.join("\n\n").slice(0, 140000) || "无文字材料；请结合随后提供的图片。"}`;
   const content = [{ type: "text", text: prompt }];
   for (const image of imageFiles.slice(0, 10)) content.push({ type: "text", text: `[实物或材料图片：${image.name}]` }, { type: "image", source: { type: "base64", media_type: image.type, data: bytesToBase64(await image.arrayBuffer()) } });
   try {
     const output = imageFiles.length ? await callMiniMaxMedia(env, content) : await callMiniMax(env, [{ role: "user", content: prompt }], 0.1);
-    return json(parseModuleAResult(output, files.map(file => file.name), env.MINIMAX_MODEL || "MiniMax-M3"));
+    let result;
+    try { result = parseModuleAResult(output, files.map(file => file.name), env.MINIMAX_MODEL || "MiniMax-M3"); }
+    catch {
+      const repair = `把下面的模块 A 评估内容整理成六行 TAB 分隔文本。不得增加事实。只输出 SUMMARY 行和 A1 至 A5 五行；格式为 A<TAB>编号<TAB>1到5或null<TAB>supported|mixed|concern|unknown<TAB>客观证据<TAB>修改意见。\n\n原始内容：\n${String(output || "").slice(0, 18000)}`;
+      result = parseModuleAResult(await callMiniMax(env, [{ role: "user", content: repair }], 0.05), files.map(file => file.name), env.MINIMAX_MODEL || "MiniMax-M3");
+    }
+    return json(result);
   } catch (error) { return json({ error: error instanceof Error ? error.message : "模块 A AI 评估失败" }, 502); }
 }
 
 function clampScore(value) { return Math.max(1, Math.min(5, Math.round(value))); }
 function clampRatio(value) { return Math.max(0, Math.min(1, value)); }
 function ratio(items, predicate) { return items.length ? items.filter(predicate).length / items.length : null; }
-function scoreFromRatio(value) { return value == null ? null : clampScore(1 + value * 4); }
+function scoreFromRatio(value) { if (value == null) return null; const ratio = clampRatio(value); return ratio >= 0.6 ? 5 : ratio >= 0.4 ? 4 : ratio >= 0.2 ? 3 : ratio > 0 ? 2 : 1; }
 function average(items, mapper) { return items.length ? items.reduce((sum, item) => sum + mapper(item), 0) / items.length : null; }
 function timeLabel(seconds) {
   const value = Math.max(0, Number(seconds) || 0), minutes = Math.floor(value / 60), rest = Math.floor(value % 60);
@@ -455,16 +478,17 @@ function evidenceConfidence(events, preferredCount = 3) {
 }
 function weightedScore(score) { return score == null ? null : Math.round(score / 5 * 12 * 10) / 10; }
 function dimension(id, label, score, finding, events, modification, preferredCount = 3) {
+  const noEvidence = score == null, finalScore = noEvidence ? 0 : score;
   return {
-    id, label, criterion: CLASSROOM_CRITERIA[id], weight: 12, max_score: 5, score, weighted_score: weightedScore(score),
-    status: score == null ? "insufficient_evidence" : score >= 4 ? "supported" : score >= 3 ? "mixed" : "concern",
+    id, label, criterion: CLASSROOM_CRITERIA[id], weight: 12, max_score: 5, score: finalScore, weighted_score: weightedScore(finalScore),
+    status: noEvidence ? "insufficient_evidence" : score >= 4 ? "supported" : score >= 3 ? "mixed" : "concern",
     finding, modification, confidence: evidenceConfidence(events, preferredCount), evidence: evidenceFor(events)
   };
 }
 function outcomePerformance(event, useAssistance = false) {
   const outcome = event.outcome === "positive" ? 1 : event.outcome === "neutral" ? 0.5 : 0;
   if (!useAssistance || event.outcome !== "positive") return outcome;
-  const assistance = event.assistance === "none" ? 0.6 : ASSISTANCE_WEIGHT[event.assistance];
+  const assistance = ASSISTANCE_WEIGHT[event.assistance] ?? 0.8;
   return outcome * assistance;
 }
 
@@ -517,29 +541,29 @@ function buildClassroomReport(payload) {
   const toolEmotionPerformance = average(toolEmotion, e => e.outcome === "negative" ? 0 : e.outcome === "neutral" ? 0.75 : 1);
   const b5Delta = baseNegative == null || toolNegative == null ? null : baseNegative - toolNegative;
   const b5Ratio = toolEmotionPerformance == null ? null : b5Delta == null ? toolEmotionPerformance : clampRatio(toolEmotionPerformance * 0.75 + clampRatio(0.5 + b5Delta) * 0.25);
-  const b5Score = scoreFromRatio(b5Ratio);
+  const b5Score = toolEmotion.length ? scoreFromRatio(b5Ratio) : events.length ? 5 : null;
 
   const dimensions = [
-    dimension("B1", "课堂参与表现", b1Score, toolParticipation.length ? (b1Delta == null ? `记录到 ${toolParticipation.length} 条教具使用中的参与证据，表现值为 ${(toolParticipationRate * 100).toFixed(0)}%；缺少使用前基准，本项按本次课堂表现评分。` : `记录到使用前 ${baselineParticipation.length} 条、使用中 ${toolParticipation.length} 条参与证据，表现值变化 ${b1Delta >= 0 ? "+" : ""}${(b1Delta * 100).toFixed(0)} 个百分点。`) : "未确认教具使用中的参与、反应、操作或回避事实，本项暂不评分。", [...baselineParticipation, ...toolParticipation], toolParticipation.length ? (b1Delta == null ? "下次补录使用前基准，并继续记录主动参与和回避频次。" : b1Score < 4 ? "调整教具呈现和轮次安排，下次复核主动参与与回避变化。" : "保留当前呈现方式，并在后续课次复核参与表现是否稳定。") : "补充至少一条教具使用中的参与或回避客观记录。", 3),
-    dimension("B2", "学习理解支持", b2Score, responses.length ? `记录到 ${responses.length} 次指令后反应或操作，正确完成比例为 ${(responseSuccess * 100).toFixed(0)}%${latencyNote}；评分同时考虑完成结果与辅助程度。` : "未确认指令后的学生反应或操作，本项暂不评分。", responses, responses.length ? (b2Score < 4 ? "把指令拆成更小步骤并优化视觉提示，下次记录正确率、提示等级和反应时长。" : "保留当前提示方式，并增加不同指令下的反应样本。") : "补充至少一条教师指令后的学生反应或操作记录。", 3),
-    dimension("B3", "操作与分层适配", b3Score, operations.length ? `记录到 ${operations.length} 次教具操作；${coverage == null ? "未设置重点学生层级" : `覆盖 ${(coverage * 100).toFixed(0)}% 的已选学生`}，评分结合完成结果、辅助等级和覆盖情况。` : "未确认学生操作教具的事实，本项暂不评分。", operations, operations.length ? (b3Score < 4 ? "按学生层级简化步骤或增加视觉、手势提示，并补齐未覆盖学生的操作记录。" : "保留当前分层设计，并在更多学生和任务轮次中复核独立完成度。") : "补充至少一条带完成结果和辅助等级的教具操作记录。", 3),
-    dimension("B4", "技能习得与泛化", b4Score, generalization.length ? `在更换材料、场景或延迟任务中记录 ${generalization.length} 次迁移机会，成功比例为 ${(generalizationSuccess * 100).toFixed(0)}%；评分同时考虑辅助程度。` : "未确认更换材料、场景或延迟任务后的迁移表现；重复原任务不作为泛化证据。", generalization, generalization.length ? (b4Score < 4 ? "增加不同材料或生活情境的迁移练习，并记录是否独立完成。" : "继续在不同场景复核技能能否稳定迁移。") : "补充至少一条真实迁移任务中的表现记录。", 2),
-    dimension("B5", "情绪行为影响", b5Score, toolEmotion.length ? (b5Delta == null ? `记录到 ${toolEmotion.length} 条教具使用中的可观察情绪或回避行为；缺少使用前基准，本项按本次课堂表现评分。` : `记录到使用前 ${baseEmotion.length} 条、使用中 ${toolEmotion.length} 条情绪或回避证据，负向事件比例${b5Delta >= 0 ? "下降或持平" : "上升"}。`) : "未确认教具使用中的可观察情绪或回避行为，本项暂不评分；不能用面部表情推测内心情绪。", [...baseEmotion, ...toolEmotion], toolEmotion.length ? (b5Score < 4 ? "调整刺激强度、等待时间或替代选择，下次记录行为发生频次与持续时间。" : "保留当前支持方式，并继续观察情绪稳定性。") : "补充至少一条教具使用中的可观察情绪或回避行为记录。", 2)
+    dimension("B1", "课堂参与表现", b1Score, toolParticipation.length ? (b1Delta == null ? `记录到 ${toolParticipation.length} 条教具使用中的参与证据，表现值为 ${(toolParticipationRate * 100).toFixed(0)}%；达到课堂参与要求即可按满分口径评价。` : `记录到使用前 ${baselineParticipation.length} 条、使用中 ${toolParticipation.length} 条参与证据，表现值变化 ${b1Delta >= 0 ? "+" : ""}${(b1Delta * 100).toFixed(0)} 个百分点。`) : "未确认教具使用中的参与、反应、操作或回避事实，本项暂不评分。", [...baselineParticipation, ...toolParticipation], "", 3),
+    dimension("B2", "学习理解支持", b2Score, responses.length ? `记录到 ${responses.length} 次指令后反应或操作，正确完成比例为 ${(responseSuccess * 100).toFixed(0)}%${latencyNote}；手势、语言和示范辅助均视为合理教学支持。` : "未确认指令后的学生反应或操作，本项暂不评分。", responses, "", 3),
+    dimension("B3", "操作与分层适配", b3Score, operations.length ? `记录到 ${operations.length} 次教具操作；${coverage == null ? "未设置重点学生层级" : `覆盖 ${(coverage * 100).toFixed(0)}% 的已选学生`}，在合理辅助下完成即视为达到要求。` : "未确认学生操作教具的事实，本项暂不评分。", operations, "", 3),
+    dimension("B4", "技能习得与泛化", b4Score, generalization.length ? `在更换材料、场景或延迟任务中记录 ${generalization.length} 次迁移机会，成功比例为 ${(generalizationSuccess * 100).toFixed(0)}%；在合理辅助下完成也计为达成。` : "未确认更换材料、场景或延迟任务后的迁移表现；重复原任务不作为泛化证据。", generalization, "", 2),
+    dimension("B5", "情绪行为影响", b5Score, toolEmotion.length ? (b5Delta == null ? `记录到 ${toolEmotion.length} 条面部表情、哭闹、尖叫或回避等可观察情绪行为；本项按课堂整体情绪稳定程度评分。` : `记录到使用前 ${baseEmotion.length} 条、使用中 ${toolEmotion.length} 条情绪或回避证据，负向事件比例${b5Delta >= 0 ? "下降或持平" : "上升"}。`) : events.length ? "已确认的课堂记录中未见哭闹、尖叫、明显痛苦表情或持续回避，按情绪稳定给满分。" : "尚无课堂记录可用于判断情绪行为。", toolEmotion.length ? [...baseEmotion, ...toolEmotion] : events, "", 2)
   ];
-  const scored = dimensions.filter(item => item.score != null);
-  const scoredWeight = scored.reduce((sum, item) => sum + item.weight, 0);
-  const observedWeightedScore = Math.round(scored.reduce((sum, item) => sum + item.weighted_score, 0) * 10) / 10;
-  const moduleScore = scored.length === 5 ? observedWeightedScore : null;
-  const suggestions = dimensions.filter(item => item.score == null || item.score < 4).map(item => ({ dimension_id: item.id, priority: item.score == null ? "evidence" : item.score <= 2 ? "high" : "medium", action: item.modification })).slice(0, 5);
+  const evidenced = dimensions.filter(item => item.status !== "insufficient_evidence"), missing = dimensions.filter(item => item.status === "insufficient_evidence");
+  const scoredWeight = evidenced.reduce((sum, item) => sum + item.weight, 0);
+  const observedWeightedScore = Math.round(dimensions.reduce((sum, item) => sum + item.weighted_score, 0) * 10) / 10;
+  const moduleScore = observedWeightedScore;
+  const suggestions = [];
   return {
-    version: "1.1", kind: "classroom_implementation", lesson, generated_at: new Date().toISOString(),
-    status: scored.length === 5 ? "complete" : scored.length ? "partial" : "needs_more_evidence",
-    summary: scored.length ? `已依据 ${events.length} 条教师确认事件，对 ${scored.length} 个维度按量表给出 1-5 分及加权分。${5 - scored.length ? `另有 ${5 - scored.length} 个维度没有直接证据，保留空分。` : ""}` : "当前事件与 B1 至 B5 均未形成直接对应，尚不能给出评分建议。",
+    version: "1.2", kind: "classroom_implementation", lesson, generated_at: new Date().toISOString(),
+    status: evidenced.length === 5 ? "complete" : evidenced.length ? "partial" : "needs_more_evidence",
+    summary: evidenced.length ? `已依据 ${events.length} 条教师确认事件，对 ${evidenced.length} 个维度按量表给出 1-5 分；${missing.length ? `另有 ${missing.length} 个维度没有直接证据，按 0 分计入模块总分。` : "五个维度均有直接证据。"}` : "当前事件与 B1 至 B5 均未形成直接对应，五个维度均按 0 分计入模块总分。",
     dimensions, module_b_score: moduleScore, observed_weighted_score: observedWeightedScore, scored_weight: scoredWeight,
-    score_note: moduleScore == null ? `已评分维度的加权得分为 ${observedWeightedScore}/${scoredWeight}；因仍有空分，暂不计算 60 分制模块 B 总分。证据不足不按低分处理。` : "五个维度均按 1-5 分评分，每项按 12 分折算，模块 B 满分 60 分；正式结论须由评估人复核确认。",
+    score_note: missing.length ? `模块 B 总分为 ${moduleScore}/60；${missing.map(item => item.id).join("、")} 没有直接证据，按 0 分计入。0 分表示未取得证据，不等同于已观察到不合格表现。` : "五个维度均按 1-5 分评分，每项按 12 分折算，模块 B 满分 60 分；正式结论须由评估人复核确认。",
     event_count: events.length, students, suggestions,
     audit: {
-      rule_version: "classroom-b-v2", confirmed_event_ids: events.map(e => e.id),
+      rule_version: "classroom-b-v3", confirmed_event_ids: events.map(e => e.id),
       video_uploaded: payload?.video_analysis?.mode === "native_video",
       ai_analysis_used: Boolean(payload?.video_analysis?.used),
       analysis_mode: payload?.video_analysis?.mode || "manual",
@@ -612,20 +636,21 @@ function buildClassroomWorkbook(payload, report) {
     excelRow(1, [excelCell("A1", "模块 B 课堂实施效果评估", 1)], 28),
     excelRow(2, [excelCell("A2", "课程名称", 7), excelCell("B2", report.lesson, 3)]),
     excelRow(3, [excelCell("A3", "生成时间", 7), excelCell("B3", report.generated_at, 3), excelCell("D3", "评估状态", 7), excelCell("E3", statusLabels[report.status], 3)]),
-    excelRow(5, ["序号", "评估维度", "评估指标描述", "权重 / %", "评分 / 1-5", "客观证据记录", "修改意见", "加权得分"].map((value, index) => excelCell(`${String.fromCharCode(65 + index)}5`, value, 2)), 30)
+    excelRow(5, ["序号", "评估维度", "评估指标描述", "权重 / %", "评分 / 0-5", "客观证据记录", "加权得分"].map((value, index) => excelCell(`${String.fromCharCode(65 + index)}5`, value, 2)), 30)
   ];
   report.dimensions.forEach((item, index) => {
     const row = 6 + index;
     const evidence = item.evidence.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.observation}`).join("；") : item.finding;
     rows.push(excelRow(row, [
       excelCell(`A${row}`, item.id, 4), excelCell(`B${row}`, item.label, 3), excelCell(`C${row}`, item.criterion, 3), excelCell(`D${row}`, item.weight, 4),
-      excelCell(`E${row}`, item.score, 4), excelCell(`F${row}`, evidence, 3), excelCell(`G${row}`, item.modification, 3),
-      excelCell(`H${row}`, item.weighted_score, 5, `IF(E${row}="","",E${row}/5*D${row})`)
+      excelCell(`E${row}`, item.score, 4), excelCell(`F${row}`, evidence, 3),
+      excelCell(`G${row}`, item.weighted_score, 5, `E${row}/5*D${row}`)
     ], 66));
   });
-  rows.push(excelRow(11, [excelCell("A11", "模块 B 小计", 6), excelCell("D11", 60, 6), excelCell("E11", report.module_b_score == null ? "待补证" : "五项完成", 6), excelCell("F11", `已评分 ${report.dimensions.filter(item => item.score != null).length}/5 项`, 6), excelCell("G11", report.module_b_score == null ? "补齐空分后形成 60 分制模块总分" : "请由评估人复核确认", 6), excelCell("H11", report.observed_weighted_score, 6, "SUM(H6:H10)")], 28));
+  const evidencedCount = report.dimensions.filter(item => item.status !== "insufficient_evidence").length, zeroEvidenceIds = report.dimensions.filter(item => item.status === "insufficient_evidence").map(item => item.id);
+  rows.push(excelRow(11, [excelCell("A11", "模块 B 总分", 6), excelCell("D11", 60, 6), excelCell("E11", `${evidencedCount}/5 项有证据`, 6), excelCell("F11", zeroEvidenceIds.length ? `${report.summary} ${zeroEvidenceIds.join("、")} 无证据按 0 分计` : report.summary, 6), excelCell("G11", report.module_b_score, 6, "SUM(G6:G10)")], 28));
   rows.push(excelRow(13, [excelCell("A13", "评分说明", 7), excelCell("B13", report.score_note, 3)], 42));
-  const reportSheet = worksheetXml(rows, [9, 18, 36, 11, 12, 48, 42, 14], ["A1:H1", "B2:H2", "B3:C3", "E3:H3", "A11:C11", "B13:H13"], 5);
+  const reportSheet = worksheetXml(rows, [9, 18, 36, 11, 12, 52, 14], ["A1:G1", "B2:G2", "B3:C3", "E3:G3", "A11:C11", "B13:G13"], 5);
 
   const rawEvents = (Array.isArray(payload.events) ? payload.events : []).filter(event => event && event.confirmed !== false);
   const evidenceRows = [
@@ -709,15 +734,16 @@ function buildEvaluationWorkbook(record, module = "full") {
     rows.push(excelRow(row, [excelCell(`A${row}`, "使用班级", 7), excelCell(`B${row}`, basic.class_name || "", 3), excelCell(`E${row}`, "呈现形式", 7), excelCell(`F${row}`, (basic.presentations || []).join("、"), 3)])); merges.push(`B${row}:D${row}`, `F${row}:H${row}`); row += 2;
   };
   const addHeaders = () => { rows.push(excelRow(row, ["序号", "评估维度", "评估指标描述", "权重 %", "评分 1-5", "客观证据记录", "修改意见", "加权得分"].map((value, index) => excelCell(`${String.fromCharCode(65 + index)}${row}`, value, 2)), 30)); row++; };
+  const addBHeaders = () => { rows.push(excelRow(row, [excelCell(`A${row}`, "序号", 2), excelCell(`B${row}`, "评估维度", 2), excelCell(`C${row}`, "评估指标描述", 2), excelCell(`D${row}`, "权重 %", 2), excelCell(`E${row}`, "评分 0-5", 2), excelCell(`F${row}`, "客观证据记录", 2), excelCell(`H${row}`, "加权得分", 2)], 30)); merges.push(`F${row}:G${row}`); row++; };
   const addA = () => {
     addSection("模块 A：课前适配性评估（权重 40%）"); addHeaders(); const first = row;
     calc.aRows.forEach(item => { const current = row++; rows.push(excelRow(current, [excelCell(`A${current}`, item.id, 4), excelCell(`B${current}`, item.label, 3), excelCell(`C${current}`, item.criterion, 3), excelCell(`D${current}`, 8, 4), excelCell(`E${current}`, item.score, 4), excelCell(`F${current}`, item.evidence || "", 3), excelCell(`G${current}`, item.modification || "", 3), excelCell(`H${current}`, item.weighted_score, 5, `IF(E${current}="","",E${current}/5*D${current})`)], 64)); });
     rows.push(excelRow(row, [excelCell(`A${row}`, "模块 A 小计", 6), excelCell(`D${row}`, 40, 6), excelCell(`E${row}`, calc.aComplete ? "已完成" : "待补充", 6), excelCell(`F${row}`, "所有打分必须填写客观证据记录", 6), excelCell(`G${row}`, calc.safetyVeto ? "A4=1，整体不合格" : "A4 安全项须单独核查", 6), excelCell(`H${row}`, calc.aScore, 6, `SUM(H${first}:H${row - 1})`)], 30)); merges.push(`A${row}:C${row}`); row += 2;
   };
   const addB = () => {
-    addSection("模块 B：课堂实施效果评估（权重 60%）"); addHeaders(); const dimensions = calc.bReport?.dimensions || Object.entries(CLASSROOM_CRITERIA).map(([id, criterion]) => ({ id, label: id, criterion, weight: 12, score: null, evidence: [], finding: "待完成课堂实施效果评估", modification: "", weighted_score: null })), first = row;
-    dimensions.forEach(item => { const current = row++, evidence = item.evidence?.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.observation}`).join("；") : item.finding || ""; rows.push(excelRow(current, [excelCell(`A${current}`, item.id, 4), excelCell(`B${current}`, item.label, 3), excelCell(`C${current}`, item.criterion || CLASSROOM_CRITERIA[item.id], 3), excelCell(`D${current}`, item.weight ?? 12, 4), excelCell(`E${current}`, item.score, 4), excelCell(`F${current}`, evidence, 3), excelCell(`G${current}`, item.modification || "", 3), excelCell(`H${current}`, item.weighted_score, 5, `IF(E${current}="","",E${current}/5*D${current})`)], 66)); });
-    rows.push(excelRow(row, [excelCell(`A${row}`, "模块 B 小计", 6), excelCell(`D${row}`, 60, 6), excelCell(`E${row}`, calc.bScore == null ? "待补证" : "已完成", 6), excelCell(`F${row}`, calc.bReport?.summary || "待完成课堂实施效果评估", 6), excelCell(`G${row}`, "依据课堂真实观察证据评分", 6), excelCell(`H${row}`, calc.bReport?.observed_weighted_score ?? null, 6, `SUM(H${first}:H${row - 1})`)], 32)); merges.push(`A${row}:C${row}`); row += 2;
+    addSection("模块 B：课堂实施效果评估（权重 60%）"); addBHeaders(); const dimensions = calc.bReport?.dimensions || Object.entries(CLASSROOM_CRITERIA).map(([id, criterion]) => ({ id, label: id, criterion, weight: 12, score: null, evidence: [], finding: "待完成课堂实施效果评估", weighted_score: null })), first = row;
+    dimensions.forEach(item => { const current = row++, evidence = item.evidence?.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.observation}`).join("；") : item.finding || ""; rows.push(excelRow(current, [excelCell(`A${current}`, item.id, 4), excelCell(`B${current}`, item.label, 3), excelCell(`C${current}`, item.criterion || CLASSROOM_CRITERIA[item.id], 3), excelCell(`D${current}`, item.weight ?? 12, 4), excelCell(`E${current}`, item.score, 4), excelCell(`F${current}`, evidence, 3), excelCell(`H${current}`, item.weighted_score, 5, `IF(E${current}="","",E${current}/5*D${current})`)], 66)); merges.push(`F${current}:G${current}`); });
+    rows.push(excelRow(row, [excelCell(`A${row}`, "模块 B 小计", 6), excelCell(`D${row}`, 60, 6), excelCell(`E${row}`, calc.bScore == null ? "待补证" : "已完成", 6), excelCell(`F${row}`, calc.bReport?.summary || "待完成课堂实施效果评估", 6), excelCell(`H${row}`, calc.bReport?.observed_weighted_score ?? null, 6, `SUM(H${first}:H${row - 1})`)], 32)); merges.push(`A${row}:C${row}`, `F${row}:G${row}`); row += 2;
   };
   const addC = () => {
     addSection("模块 C：创新推广加分项（最高 +10 分）"); rows.push(excelRow(row, [excelCell(`A${row}`, "序号", 2), excelCell(`B${row}`, "加分项目（综合单指标）", 2), excelCell(`C${row}`, "加分说明", 2), excelCell(`F${row}`, "加分（0-10）", 2), excelCell(`G${row}`, "佐证材料记录", 2)], 30)); merges.push(`C${row}:E${row}`, `G${row}:H${row}`); row++;
@@ -728,12 +754,12 @@ function buildEvaluationWorkbook(record, module = "full") {
     values.forEach(([label, value]) => { rows.push(excelRow(row, [excelCell(`A${row}`, label, 7), excelCell(`C${row}`, value, 3)], label === "课堂使用注意事项" ? 42 : 24)); merges.push(`A${row}:B${row}`, `C${row}:H${row}`); row++; }); row++;
     addSection("四、签字确认"); rows.push(excelRow(row, [excelCell(`A${row}`, "角色", 2), excelCell(`C${row}`, "姓名 / 签字", 2), excelCell(`F${row}`, "日期", 2)], 26)); merges.push(`A${row}:B${row}`, `C${row}:E${row}`, `F${row}:H${row}`); row++;
     [["teacher", "授课教师"], ["evaluator", "评估人员（教研）"], ["leader", "教研组长"]].forEach(([id, label]) => { const signature = record.summary?.signatures?.[id] || {}; rows.push(excelRow(row, [excelCell(`A${row}`, label, 3), excelCell(`C${row}`, signature.name || "", 3), excelCell(`F${row}`, signature.date || "", 3)], 25)); merges.push(`A${row}:B${row}`, `C${row}:E${row}`, `F${row}:H${row}`); row++; }); row++;
-    addSection("五、量表配套评分锚点说明"); ["5 分（优秀）：指标完全达成，超出预期，可以作为示范教具；", "4 分（良好）：指标基本达成，仅少量细节需要微调；", "3 分（合格）：指标大体达成，存在明显不足，修改后可以使用；", "2 分（待改进）：指标达成度低，需要大幅度重新调整；", "1 分（不合格）：完全不达标，存在安全风险 / 严重不适配，禁止课堂使用。"].forEach(text => { rows.push(excelRow(row, [excelCell(`A${row}`, text, 3)], 23)); merges.push(`A${row}:H${row}`); row++; }); row++;
+    addSection("五、量表配套评分锚点说明"); ["5 分（优秀）：指标达到教学要求，未发现明确问题；", "4 分（良好）：指标基本达成，仅有一处轻微不足；", "3 分（合格）：指标大体达成，存在明显不足但仍可使用；", "2 分（待改进）：指标达成度低，需要大幅度重新调整；", "1 分（不合格）：完全不达标，存在明确安全风险 / 严重不适配，禁止课堂使用。"].forEach(text => { rows.push(excelRow(row, [excelCell(`A${row}`, text, 3)], 23)); merges.push(`A${row}:H${row}`); row++; }); row++;
     addSection("六、评估原则"); ["1. 所有打分必须填写客观证据记录，写课堂观察事实，禁止单纯主观感受；", "2. 安全一票否决：模块 A4 安全项打 1 分，直接判定整体不合格，禁止用于教学；", "3. 本量表服务课题闭环：设计 — 实施 — 反馈 — 优化，评估结果用于迭代教具与主题教学活动。"].forEach(text => { rows.push(excelRow(row, [excelCell(`A${row}`, text, 3)], 25)); merges.push(`A${row}:H${row}`); row++; });
   };
-  const title = module === "A" ? "模块 A 课前适配性评估" : module === "C" ? "模块 C 创新推广加分项" : "孤独症儿童主题式教学·教具学具完整评估表";
-  addTitle(title); addBasic(); if (module === "A") addA(); else if (module === "C") addC(); else { addA(); addB(); addC(); addSummary(); }
-  return oneSheetWorkbook(module === "A" ? "课前适配性评估" : module === "C" ? "创新推广加分项" : "完整评估表", title, worksheetXml(rows, [10, 20, 39, 11, 12, 48, 42, 14], merges, 0), record.updated_at || new Date().toISOString());
+  const title = module === "A" ? "模块 A 课前适配性评估" : module === "C" ? "模块 C 创新推广加分项" : module === "demo" ? "核心演示评估表（模块 A + 模块 B）" : "孤独症儿童主题式教学·教具学具完整评估表";
+  addTitle(title); addBasic(); if (module === "A") addA(); else if (module === "C") addC(); else if (module === "demo") { addA(); addB(); } else { addA(); addB(); addC(); addSummary(); }
+  return oneSheetWorkbook(module === "A" ? "课前适配性评估" : module === "C" ? "创新推广加分项" : module === "demo" ? "核心演示" : "完整评估表", title, worksheetXml(rows, [10, 20, 39, 11, 12, 48, 42, 14], merges, 0), record.updated_at || new Date().toISOString());
 }
 
 async function evaluationExport(request) {
@@ -745,8 +771,8 @@ async function evaluationExport(request) {
     const report = record.module_b?.report && Array.isArray(record.module_b.report.dimensions) ? record.module_b.report : buildClassroomReport(classroomPayload);
     return new Response(buildClassroomWorkbook(classroomPayload, report), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": "attachment; filename=classroom-module-b.xlsx", "cache-control": "no-store" } });
   }
-  const normalizedModule = module === "A" || module === "C" ? module : "full";
-  return new Response(buildEvaluationWorkbook(record, normalizedModule), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": `attachment; filename=${normalizedModule === "A" ? "module-a" : normalizedModule === "C" ? "module-c" : "complete-evaluation"}.xlsx`, "cache-control": "no-store" } });
+  const normalizedModule = ["A", "C", "demo"].includes(module) ? module : "full";
+  return new Response(buildEvaluationWorkbook(record, normalizedModule), { headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": `attachment; filename=${normalizedModule === "A" ? "module-a" : normalizedModule === "C" ? "module-c" : normalizedModule === "demo" ? "core-demo-a-b" : "complete-evaluation"}.xlsx`, "cache-control": "no-store" } });
 }
 
 async function classroomReport(request) {
@@ -775,20 +801,48 @@ async function classroomExport(request) {
 }
 
 async function extractClassroomPlan(request, env) {
-  if (!env.MINIMAX_API_KEY) return json({ error: "尚未配置模型密钥，请先手工填写教案观察计划" }, 503);
+  if (!env.MINIMAX_API_KEY) return json({ error: "尚未配置模型密钥，暂时无法智能提取教案" }, 503);
   const form = await request.formData();
   const file = form.get("lesson_plan");
   if (!file || typeof file === "string") return json({ error: "请选择一份可读取的教案" }, 400);
   if (file.size > 10 * 1024 * 1024) return json({ error: "教案文件请控制在 10MB 以内" }, 413);
   const text = await extractFile(file);
   if (!text?.trim()) return json({ error: "未从教案中读取到文字，请转换为 DOCX、PPTX、TXT 或 MD" }, 422);
-  const system = "你负责从特殊教育教案中提取课堂视频观察计划。不要评价，不要编造。只输出有效JSON：{\"lesson\":\"课程名\",\"goals\":[\"可观察目标\"],\"steps\":[\"课堂环节\"],\"instructions\":[\"关键指令\"],\"expected_responses\":[\"预期学生反应\"],\"generalization_tasks\":[\"迁移任务\"]}。每个数组最多6项。";
-  const content = await callMiniMax(env, [{ role: "system", content: system }, { role: "user", content: text.slice(0, 80000) }], 0.1);
+  const system = "你负责从特殊教育教案中提取课堂视频观察计划。不要评价，不要编造，不要输出 JSON、Markdown、代码围栏或思考过程。只输出逐行 TAB 分隔文本：LESSON<TAB>课程名；GOAL<TAB>可观察目标；STEP<TAB>课堂环节；INSTRUCTION<TAB>关键指令；RESPONSE<TAB>预期学生反应；TRANSFER<TAB>迁移任务。除 LESSON 一行外，其他类型最多6行；字段内容不得换行。输出时使用真实制表符。";
+  const parsePlan = rawContent => {
+    const cleaned = String(rawContent || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    const start = cleaned.indexOf("{"), end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        const data = JSON.parse(escapeControlsInStrings(cleaned.slice(start, end + 1)).replace(/,\s*([}\]])/g, "$1"));
+        const result = { lesson: String(data.lesson || ""), goals: (data.goals || []).slice(0, 6), steps: (data.steps || []).slice(0, 6), instructions: (data.instructions || []).slice(0, 6), expected_responses: (data.expected_responses || []).slice(0, 6), generalization_tasks: (data.generalization_tasks || []).slice(0, 6) };
+        if (result.goals.length || result.steps.length || result.instructions.length) return result;
+      } catch {}
+    }
+    const result = { lesson: "", goals: [], steps: [], instructions: [], expected_responses: [], generalization_tasks: [] };
+    const targets = { GOAL: "goals", STEP: "steps", INSTRUCTION: "instructions", RESPONSE: "expected_responses", TRANSFER: "generalization_tasks" };
+    for (const line of cleaned.split(/\r?\n/)) {
+      let parts = line.trim().replace(/^[-*]\s*/, "").split("\t").map(value => value.trim());
+      if (parts.length < 2 && line.includes("|")) parts = line.split("|").map(value => value.trim()).filter(Boolean);
+      const type = String(parts.shift() || "").toUpperCase(), value = parts.join(" ").trim();
+      if (!value) continue;
+      if (type === "LESSON") result.lesson = value;
+      else if (targets[type] && result[targets[type]].length < 6) result[targets[type]].push(value);
+    }
+    if (!result.goals.length && !result.steps.length && !result.instructions.length) throw new Error("观察计划缺少可读取条目");
+    return result;
+  };
   try {
-    const start = content.indexOf("{"), end = content.lastIndexOf("}");
-    const data = JSON.parse(content.slice(start, end + 1));
-    return json({ lesson: String(data.lesson || file.name.replace(/\.[^.]+$/, "")), goals: (data.goals || []).slice(0, 6), steps: (data.steps || []).slice(0, 6), instructions: (data.instructions || []).slice(0, 6), expected_responses: (data.expected_responses || []).slice(0, 6), generalization_tasks: (data.generalization_tasks || []).slice(0, 6) });
-  } catch { return json({ error: "教案已读取，但观察计划格式不完整，请重试或手工填写" }, 502); }
+    const content = await callMiniMax(env, [{ role: "system", content: system }, { role: "user", content: text.slice(0, 80000) }], 0.1, 4096);
+    let data;
+    try { data = parsePlan(content); }
+    catch {
+      const repair = `把下面的教案观察计划整理成 TAB 分隔文本，不增加事实。只使用 LESSON、GOAL、STEP、INSTRUCTION、RESPONSE、TRANSFER 六种行类型，每行一个条目。\n\n原始内容：\n${String(content || "").slice(0, 18000)}`;
+      data = parsePlan(await callMiniMax(env, [{ role: "user", content: repair }], 0.05, 4096));
+    }
+    data.lesson ||= file.name.replace(/\.[^.]+$/, "");
+    return json(data);
+  } catch { return json({ error: "教案已读取，但 AI 未能整理出观察计划，请点击按钮重试" }, 502); }
 }
 
 export default {
