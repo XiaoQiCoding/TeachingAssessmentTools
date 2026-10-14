@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node build.mjs",
     "validate": "node validate.mjs",
-    "test": "node build.mjs && node tests/smoke-test.mjs",
+    "test": "node build.mjs && node tests/smoke-test.mjs && node tests/module-a-test.mjs",
     "start": "node backend/local-server.mjs"
   }
 }
