@@ -58,6 +58,10 @@ try{
    const screenStarted=Date.now(),screenFrames=await sources.prepareScreen(uploaded.data.source_id,120,120);
    assert.equal(screenFrames.length,30);assert.equal(screenFrames.at(-1).time_seconds,116);
    report.screening={duration_seconds:120,frames:screenFrames.length,bytes:screenFrames.reduce((n,f)=>n+f.blob.size,0),elapsed_ms:Date.now()-screenStarted};
+   const tailFrames=await sources.prepareScreen(uploaded.data.source_id,1680,uploaded.data.duration_seconds-1680);
+   assert.ok(tailFrames.length>0&&tailFrames.length<=Math.ceil((uploaded.data.duration_seconds-1680)/4));
+   assert.ok(tailFrames.every(f=>f.time_seconds<uploaded.data.duration_seconds-1680));
+   report.tail_screening={frames:tailFrames.length,expected_max:Math.ceil((uploaded.data.duration_seconds-1680)/4),last_time_seconds:tailFrames.at(-1).time_seconds};
    for(const start of [0,1320]){
      const begin=Date.now(),blob=await sources.prepareClip(uploaded.data.source_id,start,60);const elapsed=Date.now()-begin;
      assert.ok(blob.size<7500000,'One-minute clip must fit Qwen inline payload limit');

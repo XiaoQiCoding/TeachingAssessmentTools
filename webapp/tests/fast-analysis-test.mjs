@@ -24,7 +24,10 @@ try{
  globalThis.fetch=async(_url,options)=>{modelCalls++;body=JSON.parse(options.body);return Response.json({choices:[{message:{content:JSON.stringify(answer)}}],usage:{prompt_tokens:123,completion_tokens:45}})};
  let res=await worker.fetch(request(),env),data=await res.json();assert.equal(res.status,200);assert.equal(data.windows[0].start_seconds,125);assert.equal(data.windows[0].end_seconds,155);assert.deepEqual(data.candidates,[],'Screening must never create scoring candidates');assert.equal(data.analysis.usage.input_tokens,123);assert.equal(data.analysis.usage.output_tokens,45);assert.ok(body.messages[0].content.some(c=>c.type==='image_url'));
  for(const bad of [{duration:121},{clip_offset:-1},{duration:'NaN'}]){res=await worker.fetch(request(bad),env);assert.equal(res.status,400)}assert.equal(modelCalls,1,'Invalid ranges never reach the model');
- for(const windows of [[{start_seconds:100,end_seconds:140,reason:'outside'}],[{start_seconds:0,end_seconds:10,reason:'too short'}],null]){answer={summary:'invalid',windows};res=await worker.fetch(request(),env);assert.equal(res.status,502)}
+ for(const windows of [[{start_seconds:130,end_seconds:140,reason:'outside'}],[{start_seconds:10,end_seconds:5,reason:'reversed'}],null]){answer={summary:'invalid',windows};res=await worker.fetch(request(),env);assert.equal(res.status,502)}
+ for(const windows of [[{start_seconds:100,end_seconds:140,reason:'clip boundary'}],[{start_seconds:0,end_seconds:10,reason:'short clue'}],[{start_seconds:0,end_seconds:120,reason:'long activity'}],[{start_seconds:130,end_seconds:140,reason:'bad'},{start_seconds:20,end_seconds:50,reason:'valid'}]]){
+   answer={summary:'Keep summary and normalize location hints only',windows};res=await worker.fetch(request(),env);data=await res.json();assert.equal(res.status,200);assert.ok(data.warnings.length);assert.deepEqual(data.candidates,[]);assert.ok(data.windows.every(w=>w.start_seconds>=120&&w.end_seconds<=240&&w.end_seconds-w.start_seconds>=20&&w.end_seconds-w.start_seconds<=60));
+ }
  res=await worker.fetch(request(),{...env,PREPARE_VIDEO_SCREEN:async()=>{throw Object.assign(new Error('expired'),{local_status:410})}});data=await res.json();assert.equal(res.status,410);assert.equal(data.retryable,true);
  globalThis.fetch=async()=>Response.json({error:{message:'rate limited'}},{status:429});res=await worker.fetch(request(),env);data=await res.json();assert.equal(data.retryable,true);
  // Dense analysis supports explicit fps; a malicious value is rejected before media processing.
@@ -36,7 +39,7 @@ try{
 }finally{globalThis.fetch=original}
 
 // Exercise the real automatic entry point in quick mode, including pause/resume and mode switching.
-const start=html.slice(html.indexOf('  async function startAssessment(){'),html.indexOf("  $('#startAssessment').onclick"));
+const start=html.slice(html.indexOf('  async function startAssessment(options={}){'),html.indexOf("  $('#startAssessment').onclick"));
 const controls=new Map(),$=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',checked:true,classList:{add(){},remove(){},toggle(){}},appendChild(){}});return controls.get(key)};
 $('#videoFile').files=[{}];$('#goals').value='分类';$('#video').duration=245;$('#analysisStrategy').value='quick';$('#detailFps').value='2';
 const factory=new Function('$','document','fetch',helpers+coverage+`
@@ -49,7 +52,9 @@ const factory=new Function('$','document','fetch',helpers+coverage+`
 `);
 const entry=factory($,{querySelectorAll:()=>[]},async()=>Response.json({ready:true}));
 await entry.run();assert.equal(entry.state().clipCalls,0,'Incomplete initial screening must pause before focus analysis');
+await entry.run({useCompletedScreening:true});assert.equal(entry.state().screenCalls,2,'Explicit partial continuation never retries failed screening');assert.ok(entry.state().clipCalls>0);assert.equal(entry.state().analysisInfo.screening_incomplete,true);assert.ok(entry.state().analysisInfo.screening_windows.some(w=>w.status!=='analyzed'),'Missing screening is preserved, never marked complete');
 await entry.run();const state=entry.state();assert.equal(state.screenCalls,4,'Completed screening windows are reused');assert.equal(state.analysisInfo.workflow_version,'screen-focus-v1');assert.ok(state.clipCalls>0);
+assert.equal(state.analysisInfo.screening_incomplete,false);
 await entry.run();assert.equal(entry.state().screenCalls,4);assert.equal(entry.state().clipCalls,state.clipCalls,'Resume must not rerun completed focus windows');
 $('#analysisStrategy').value='full';await entry.run();assert.equal(entry.state().analysisInfo.workflow_version,'whole-class-v1');assert.ok(entry.state().recommendedWindows.some(w=>w.source==='whole_class'));
 console.log('Fast analysis: range validation, low-cost screening, no scoring candidates, usage, overload/expiry, resume and full-mode compatibility passed');

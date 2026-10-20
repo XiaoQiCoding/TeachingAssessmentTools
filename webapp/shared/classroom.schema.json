@@ -13,6 +13,7 @@
     "module_b_score": {"type": ["number", "null"], "minimum": 0, "maximum": 60},
     "observed_weighted_score": {"type": "number", "minimum": 0, "maximum": 60},
     "scored_weight": {"type": "number", "minimum": 0, "maximum": 60},
+    "requires_human_review": {"type": "boolean"},
     "score_note": {"type": "string"},
     "event_count": {"type": "integer", "minimum": 0},
     "students": {"type": "array", "maxItems": 3},
@@ -43,7 +44,10 @@
       "type": "object",
       "required": ["rule_version", "confirmed_event_ids", "video_uploaded"],
       "properties": {
-        "rule_version": {"enum": ["classroom-b-v3", "classroom-b-v4", "classroom-b-v5"]},
+        "review_policy": {"enum": ["playback_only", "ai_assisted"]},
+        "ai_adopted_event_count": {"type": "integer", "minimum": 0},
+        "playback_reviewed_event_count": {"type": "integer", "minimum": 0},
+        "rule_version": {"enum": ["classroom-b-v3", "classroom-b-v4", "classroom-b-v5", "classroom-b-v6"]},
         "confirmed_event_ids": {"type": "array", "items": {"type": "string"}},
         "video_uploaded": {"type": "boolean"},
         "ai_analysis_used": {"type": "boolean"},
@@ -59,6 +63,7 @@
       "type": "object",
       "required": ["event_id", "time", "student_id", "observation", "confidence"],
       "properties": {
+        "review_method": {"enum": ["playback", "ai_batch"]}, "reviewed_clip": {"type": "boolean"},
         "event_id": {"type": "string"}, "time": {"type": "string"}, "student_id": {"type": "string"},
         "start_seconds": {"type": "number"}, "end_seconds": {"type": "number"},
         "task": {"type": "string"}, "expected_response": {"type": "string"}, "actual_response": {"type": "string"}, "video_identity": {"type": "string"},

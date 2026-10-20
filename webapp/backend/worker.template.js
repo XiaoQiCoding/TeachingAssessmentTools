@@ -2,6 +2,8 @@ const PAGE_HTML = __PAGE_HTML__;
 const CLASSROOM_HTML = __CLASSROOM_HTML__;
 const MODEL_SELECTOR_JS = __MODEL_SELECTOR_JS__;
 const DIAGNOSTICS_JS = __DIAGNOSTICS_JS__;
+const MATERIALS_JS = __MATERIALS_JS__;
+const NAVIGATION_JS = __NAVIGATION_JS__;
 const PRE_SKILL = __PRE_SKILL__;
 const POST_SKILL = __POST_SKILL__;
 const OUTPUT_SCHEMA = __OUTPUT_SCHEMA__;
@@ -419,6 +421,26 @@ async function locateTranscript(request,env){
   try{let result;for(let attempt=0;attempt<2;attempt++){try{stage='request';const raw=await callMiniMax(env,messages,0.1,4096,Math.max(1,deadline-Date.now()),{direct:true,diagnostics:true,transientAttempts:3});responseLength=raw.length;stage='validation';result=resolveTranscriptWindows(raw,segments,tasks,duration);break}catch(error){console.warn(JSON.stringify({event:'transcript_locator_failed',stage,attempt:attempt+1,error_type:error.name,detail:error.message,response_characters:responseLength,segments:segments.length,tasks:tasks.length}));if(attempt===1||stage==='request'||error.name==='TimeoutError'||Date.now()>=deadline)throw error;messages.push({role:'user',content:'上一定位结果格式未通过校验：'+error.message+'。请仅引用现有句子编号和任务编号重新生成。'})}}return json({...result,model:env.MINIMAX_MODEL||'MiniMax-M3',locator_version:'transcript-v1'});}catch(error){const code=error.status===529?'model_overloaded':error.code==='model_output_truncated'?'model_output_truncated':error.name==='TimeoutError'?'model_timeout':stage==='validation'?(responseLength?'invalid_references_or_format':'empty_model_output'):'model_request_failed';return json({error:code==='model_overloaded'?'模型服务繁忙（529），连续尝试3次仍未恢复；文字稿和已完成批次已保留，无需修改文字稿。':code==='model_output_truncated'?'模型回答被长度限制截断；文字稿已保留，请分批重试。':code==='model_timeout'?'片段定位请求超过90秒；文字稿已保留，请重试。':stage==='validation'?'模型定位回答未通过校验（'+(responseLength?'句子编号或格式不符合要求':'未返回有效正文')+'）；文字稿已保留，请重试。':'片段定位的模型请求失败：'+error.message+'；文字稿已保留。',error_code:code,upstream_status:error.status||null,retryable:error.retryable===true},502)}
 }
 
+function normalizeScreeningWindows(rows,start,duration) {
+  const windows=[],warnings=[];
+  for(const [index,row] of rows.entries()){
+    const a=Number(row?.start_seconds),b=Number(row?.end_seconds),reason=typeof row?.reason==='string'?row.reason.trim().slice(0,1000):'';
+    if(row?.start_seconds==null||row?.end_seconds==null||!Number.isFinite(a)||!Number.isFinite(b)||b<=a||!reason||b<=0||a>=duration){
+      warnings.push(`推荐${index+1}已舍弃：起止时间无效、超出本段或缺少理由（${a}—${b}秒）。`);continue;
+    }
+    let from=Math.max(0,a),to=Math.min(duration,b);
+    if(from!==a||to!==b)warnings.push(`推荐${index+1}超出本段的部分已裁去（${a}—${b}秒）。`);
+    const minimum=Math.min(20,duration);
+    if(to-from<minimum){const center=(from+to)/2;from=Math.max(0,Math.min(duration-minimum,center-minimum/2));to=from+minimum;warnings.push(`推荐${index+1}不足${minimum}秒，已扩展上下文；新增范围仅供检查。`);}
+    if(to-from>60)warnings.push(`推荐${index+1}超过60秒，已拆为连续检查段。`);
+    for(let cursor=from;cursor<to;cursor+=60){
+      const end=Math.min(to,cursor+60),begin=Math.max(from,end-Math.max(minimum,end-cursor));
+      windows.push({start_seconds:start+begin,end_seconds:start+end,reason,priority:row.priority==='concern'?'concern':'normal'});
+    }
+  }
+  if(rows.length&&!windows.length)throw new Error('初筛推荐时间无效：'+warnings.join('；'));
+  return {windows,warnings};
+}
 async function screenClassroomVideo(form,env){
   const started=Date.now(),timings=env.DIAGNOSTICS_TIMINGS;let stage='screen_frames';
   try{
@@ -432,9 +454,10 @@ async function screenClassroomVideo(form,env){
     stage='model_request';const raw=await callMiniMaxMedia(env,content);stage='validation';
     const clean=raw.replace(/```(?:json)?/g,'').trim(),data=JSON.parse(clean.slice(clean.indexOf('{'),clean.lastIndexOf('}')+1));
     if(typeof data.summary!=='string'||!Array.isArray(data.windows)||data.windows.length>2)throw new Error('初筛结果结构无效');
-    const windows=data.windows.map(w=>{const a=Number(w.start_seconds),b=Number(w.end_seconds);if(!Number.isFinite(a)||!Number.isFinite(b)||a<0||b>duration||b<=a||b-a>60||b-a<Math.min(20,duration)||typeof w.reason!=='string'||!w.reason.trim())throw new Error('初筛推荐时间无效');return {start_seconds:start+a,end_seconds:start+b,reason:w.reason.slice(0,1000),priority:w.priority==='concern'?'concern':'normal'}});
+    const {windows,warnings}=normalizeScreeningWindows(data.windows,start,duration);
+    if(warnings.length)env.DIAGNOSTICS_LOG?.({event:'screening_windows_normalized',stage:'validation',message:warnings.join('；')});
     timings.total_server_ms=Date.now()-started;
-    return json({summary:data.summary.slice(0,2000),windows,candidates:[],diagnostic_id:env.DIAGNOSTIC_ID||null,analysis:{stage:'screening',model:env.MINIMAX_MODEL,frame_count:frames.length,usage:env.DIAGNOSTICS_USAGE,timings}});
+    return json({summary:data.summary.slice(0,2000)+(warnings.length?' 时间范围处理：'+warnings.join('；'):''),windows,warnings,candidates:[],diagnostic_id:env.DIAGNOSTIC_ID||null,analysis:{stage:'screening',model:env.MINIMAX_MODEL,frame_count:frames.length,usage:env.DIAGNOSTICS_USAGE,timings}});
   }catch(error){timings.total_server_ms=Date.now()-started;return json({error:safeDiagnosticText(error.message,env),failure_detail:modelErrorDetail(error,env,stage),diagnostic_id:env.DIAGNOSTIC_ID||null,timings,usage:env.DIAGNOSTICS_USAGE,retryable:error.retryable===true||[410,429].includes(error.local_status)},error.local_status||502)}
 }
 async function analyzeClassroomVideo(request, env) {
@@ -747,8 +770,9 @@ function buildTraceableClassroomReport(payload) {
   const raw = Array.isArray(payload.events) ? payload.events.slice(0,500) : [];
   const ids = new Set();
   const duplicates = new Set();
+  const isBatchAdopted=e=>payload.review_policy==='ai_assisted'&&e?.review_method==='ai_batch'&&e.ai_adopted===true&&e.source==='ai_candidate'&&['continuous_clip','native_video'].includes(e.analysis_source);
   for (const event of raw) { if (!event) continue; if (ids.has(event.id)) duplicates.add(event.id); ids.add(event.id); }
-  const checked = raw.filter(e => e?.confirmed === true && typeof e.id === "string" && e.id && CLASSROOM_TYPES.has(e.type) && CLASSROOM_PHASES.has(e.phase) && !duplicates.has(e.id) && e.reviewed_clip === true && Number.isFinite(Number(e.start_seconds)) && Number.isFinite(Number(e.end_seconds)) && Number(e.start_seconds)>=0 && Number(e.end_seconds) > Number(e.start_seconds) && (!(Number(payload.video_duration)>0) || Number(e.end_seconds)<=Number(payload.video_duration)) && e.video_identity && e.video_identity === payload.video_identity && String(e.actual_response || "").trim());
+  const checked = raw.filter(e => e?.confirmed === true && typeof e.id === "string" && e.id && CLASSROOM_TYPES.has(e.type) && CLASSROOM_PHASES.has(e.phase) && !duplicates.has(e.id) && ((e.reviewed_clip === true&&e.review_method!=='ai_batch')||isBatchAdopted(e)) && Number.isFinite(Number(e.start_seconds)) && Number.isFinite(Number(e.end_seconds)) && Number(e.start_seconds)>=0 && Number(e.end_seconds) > Number(e.start_seconds) && (!(Number(payload.video_duration)>0) || Number(e.end_seconds)<=Number(payload.video_duration)) && e.video_identity && e.video_identity === payload.video_identity && String(e.actual_response || "").trim());
   const eligible = checked.filter(e => {
     if (["response", "operation", "generalization"].includes(e.type)) {
       if (!String(e.task || "").trim() || !String(e.expected_response || "").trim() || (!["positive", "negative"].includes(e.outcome)&&!["partial","minimal","not_achieved"].includes(e.completion_quality))) return false;
@@ -765,7 +789,7 @@ function buildTraceableClassroomReport(payload) {
     if (row.status === "insufficient_evidence") { row.score = null; row.weighted_score = null; }
     row.evidence = row.evidence.map(entry => {
       const event = byId.get(entry.event_id);
-      return { ...entry, start_seconds: Number(event.start_seconds), end_seconds: Number(event.end_seconds), task: event.task || "", expected_response: event.expected_response || "", actual_response: event.actual_response, assistance: event.assistance, outcome: event.outcome, completion_quality:event.completion_quality||"unknown",quality_evidence:event.quality_evidence||"",assistance_matches_goal:event.assistance_matches_goal||"unknown",assistance_evidence:event.assistance_evidence||"",changed_context: event.changed_context || "", video_identity: event.video_identity, locating_basis:event.locating_basis||"",transcript_context:event.transcript_context||"",window_id:event.window_id||"",reviewed_at: event.reviewed_at || null, source: event.source || "manual",analysis_model:event.analysis_model||null,analysis_provider:event.analysis_provider||null };
+      return { ...entry, start_seconds: Number(event.start_seconds), end_seconds: Number(event.end_seconds), task: event.task || "", expected_response: event.expected_response || "", actual_response: event.actual_response, assistance: event.assistance, outcome: event.outcome, completion_quality:event.completion_quality||"unknown",quality_evidence:event.quality_evidence||"",assistance_matches_goal:event.assistance_matches_goal||"unknown",assistance_evidence:event.assistance_evidence||"",changed_context: event.changed_context || "", video_identity: event.video_identity, locating_basis:event.locating_basis||"",transcript_context:event.transcript_context||"",window_id:event.window_id||"",review_method:isBatchAdopted(event)?'ai_batch':'playback',reviewed_clip:!isBatchAdopted(event)&&event.reviewed_clip===true,adopted_at:event.adopted_at||null,reviewed_at: event.reviewed_at || null, source: event.source || "manual",analysis_model:event.analysis_model||null,analysis_provider:event.analysis_provider||null };
     });
     const eventRows=row.evidence.map(entry=>byId.get(entry.event_id)).filter(Boolean);
     const judged=judgeDimension(row.id,eventRows,payload);
@@ -773,6 +797,14 @@ function buildTraceableClassroomReport(payload) {
     row.status=row.score==null?'insufficient_evidence':row.score>=4?'supported':row.score>=3?'mixed':'concern';
     row.scoring_basis=JUDGE_RULE;
     row.finding=judged.score_explanation;
+    const adopted=eventRows.filter(isBatchAdopted);
+    row.verification_status=adopted.length?(adopted.length===eventRows.length?'ai_adopted':'mixed'):'reviewed';
+    if(adopted.length){
+      row.evidence_sufficiency.scope=adopted.length===eventRows.length?'ai_adopted_clips':'mixed_review_clips';
+      row.evidence_sufficiency.notes.unshift(`${adopted.length}条为用户批量采纳的AI判断，未逐条回看；本项为待抽查的评分建议。`);
+      const describe=text=>String(text).replaceAll('人工核实','用户采纳').replaceAll('已核实','已采纳').replaceAll('已复核','已采纳');
+      for(const key of ['finding','score_explanation','next_level_gap','scoring_basis'])row[key]=describe(row[key]);
+    }
 
   }
   report.observed_weighted_score = Math.round(report.dimensions.reduce((sum,r)=>sum+(r.weighted_score || 0),0)*10)/10;
@@ -785,13 +817,22 @@ function buildTraceableClassroomReport(payload) {
   report.audit.analysis_models=[...new Set(eligible.map(e=>e.analysis_model).filter(Boolean))];
   report.audit.video_identity = payload.video_identity || "";
   report.audit.video_duration=Number(payload.video_duration)>0?Number(payload.video_duration):null;
-  report.audit.scoring_events = eligible.map(e=>({id:e.id,type:e.type,phase:e.phase,outcome:e.outcome,completion_quality:e.completion_quality||"unspecified",quality_evidence:e.quality_evidence||"",assistance_matches_goal:e.assistance_matches_goal||"unknown",assistance_evidence:e.assistance_evidence||"",assistance:e.assistance,start_seconds:e.start_seconds,end_seconds:e.end_seconds}));
+  report.audit.scoring_events = eligible.map(e=>({id:e.id,review_method:isBatchAdopted(e)?'ai_batch':'playback',type:e.type,phase:e.phase,outcome:e.outcome,completion_quality:e.completion_quality||"unspecified",quality_evidence:e.quality_evidence||"",assistance_matches_goal:e.assistance_matches_goal||"unknown",assistance_evidence:e.assistance_evidence||"",assistance:e.assistance,start_seconds:e.start_seconds,end_seconds:e.end_seconds}));
   report.audit.observation_plan = String(payload.observation_plan || "").slice(0, 6000);
-  report.audit.coverage_note = "仅评价已复核的任务片段；不代表全课、全部学生或教具的因果效果。";
+  const adoptedCount=eligible.filter(isBatchAdopted).length;
+  report.audit.review_policy=payload.review_policy==='ai_assisted'?'ai_assisted':'playback_only';
+  report.audit.ai_adopted_event_count=adoptedCount;
+  report.audit.playback_reviewed_event_count=eligible.length-adoptedCount;
+  report.requires_human_review=adoptedCount>0;
+  report.audit.coverage_note=adoptedCount?`包含${adoptedCount}条未逐条回看的AI批量采纳记录；当前为待抽查的评分建议，不代表全课、全部学生或教具的因果效果。`:"仅评价已复核的任务片段；不代表全课、全部学生或教具的因果效果。";
   const missing = report.dimensions.filter(r => r.score == null);
   report.module_b_score = missing.length ? null : report.observed_weighted_score;
   report.summary = `共 ${raw.length} 条记录，${eligible.length} 条通过片段复核和任务证据校验；${5-missing.length}/5 项可评分。`;
   report.score_note = (missing.length ? `已取得证据的加权分 ${report.observed_weighted_score}，覆盖权重 ${report.scored_weight}/60；${missing.map(r=>r.id).join("、")} 待补证，暂不生成模块总分。` : `已复核片段的模块评分建议 ${report.module_b_score}/60。`)+' 表现分数与证据覆盖分别说明。试用评分规则尚需人工样本校准，不能直接当作整课质量或教具因果效果结论。';
+  if(adoptedCount){
+    report.summary=`AI辅助评分建议：共${raw.length}条采纳记录，${eligible.length}条通过时间、来源及任务字段校验，其中${adoptedCount}条未逐条回看；${5-missing.length}/5项可评分。`;
+    report.score_note=report.score_note.replaceAll('已复核片段','已采纳片段')+' 含AI批量采纳记录，尚未完成逐条人工核实。';
+  }
   return report;
 }
 
@@ -947,7 +988,7 @@ function buildClassroomWorkbook(payload, report) {
   ];
   report.dimensions.forEach((item, index) => {
     const row = 6 + index;
-    const evidence = (item.evidence_sufficiency ? `证据范围：${item.evidence_sufficiency.notes.join("；")}\n` : "") + (item.score_explanation ? `本档依据：${item.score_explanation}\n上一档核验：${item.next_level_gap}\n` : "") + (item.evidence.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.observation}`).join("；") : item.finding);
+    const evidence = (item.evidence_sufficiency ? `证据范围：${item.evidence_sufficiency.notes.join("；")}\n` : "") + (item.score_explanation ? `本档依据：${item.score_explanation}\n上一档核验：${item.next_level_gap}\n` : "") + (item.evidence.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.review_method==='ai_batch'?'[AI批量采纳，未回看] ':''}${entry.observation}`).join("；") : item.finding);
     rows.push(excelRow(row, [
       excelCell(`A${row}`, item.id, 4), excelCell(`B${row}`, item.label, 3), excelCell(`C${row}`, item.criterion, 3), excelCell(`D${row}`, item.weight, 4),
       excelCell(`E${row}`, item.score, 4), excelCell(`F${row}`, evidence, 3),
@@ -966,7 +1007,7 @@ function buildClassroomWorkbook(payload, report) {
   ];
   rawEvents.forEach((event, index) => {
     const row = 4 + index;
-    const values = [event.id || `E${index + 1}`, timeLabel(event.start_seconds), timeLabel(event.end_seconds ?? event.start_seconds), phaseLabels[event.phase] || event.phase, typeLabels[event.type] || event.type, event.student_id || "全班", outcomeLabels[event.outcome] || event.outcome, assistanceLabels[event.assistance] || event.assistance, event.note || "", event.confidence || "medium"];
+    const values = [event.id || `E${index + 1}`, timeLabel(event.start_seconds), timeLabel(event.end_seconds ?? event.start_seconds), phaseLabels[event.phase] || event.phase, typeLabels[event.type] || event.type, event.student_id || "全班", outcomeLabels[event.outcome] || event.outcome, assistanceLabels[event.assistance] || event.assistance, (event.review_method==='ai_batch'?'[AI批量采纳，未回看] ':'')+(event.note || ""), event.confidence || "medium"];
     evidenceRows.push(excelRow(row, values.map((value, column) => excelCell(`${String.fromCharCode(65 + column)}${row}`, value, column === 8 ? 3 : 4)), 34));
   });
   const evidenceSheet = worksheetXml(evidenceRows, [14, 12, 12, 16, 17, 12, 14, 14, 58, 12], ["A1:J1"], 3);
@@ -1049,7 +1090,7 @@ function buildEvaluationWorkbook(record, module = "full") {
   };
   const addB = () => {
     addSection("模块 B：课堂实施效果评估（权重 60%）"); addBHeaders(); const dimensions = calc.bReport?.dimensions || Object.entries(CLASSROOM_CRITERIA).map(([id, criterion]) => ({ id, label: id, criterion, weight: 12, score: null, evidence: [], finding: "待完成课堂实施效果评估", weighted_score: null })), first = row;
-    dimensions.forEach(item => { const current = row++, evidence = (item.evidence_sufficiency ? `证据范围：${item.evidence_sufficiency.notes.join("；")}\n` : "") + (item.score_explanation ? `本档依据：${item.score_explanation}\n上一档核验：${item.next_level_gap}\n` : "") + (item.evidence?.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.observation}`).join("；") : item.finding || ""); rows.push(excelRow(current, [excelCell(`A${current}`, item.id, 4), excelCell(`B${current}`, item.label, 3), excelCell(`C${current}`, item.criterion || CLASSROOM_CRITERIA[item.id], 3), excelCell(`D${current}`, item.weight ?? 12, 4), excelCell(`E${current}`, item.score, 4), excelCell(`F${current}`, evidence, 3), excelCell(`H${current}`, item.weighted_score, 5, `IF(E${current}="","",E${current}/5*D${current})`)], 66)); merges.push(`F${current}:G${current}`); });
+    dimensions.forEach(item => { const current = row++, evidence = (item.evidence_sufficiency ? `证据范围：${item.evidence_sufficiency.notes.join("；")}\n` : "") + (item.score_explanation ? `本档依据：${item.score_explanation}\n上一档核验：${item.next_level_gap}\n` : "") + (item.evidence?.length ? item.evidence.map(entry => `${entry.time} ${entry.student_id} ${entry.review_method==='ai_batch'?'[AI批量采纳，未回看] ':''}${entry.observation}`).join("；") : item.finding || ""); rows.push(excelRow(current, [excelCell(`A${current}`, item.id, 4), excelCell(`B${current}`, item.label, 3), excelCell(`C${current}`, item.criterion || CLASSROOM_CRITERIA[item.id], 3), excelCell(`D${current}`, item.weight ?? 12, 4), excelCell(`E${current}`, item.score, 4), excelCell(`F${current}`, evidence, 3), excelCell(`H${current}`, item.weighted_score, 5, `IF(E${current}="","",E${current}/5*D${current})`)], 66)); merges.push(`F${current}:G${current}`); });
     rows.push(excelRow(row, [excelCell(`A${row}`, "模块 B 小计", 6), excelCell(`D${row}`, 60, 6), excelCell(`E${row}`, calc.bScore == null ? "待补证" : "已完成", 6), excelCell(`F${row}`, calc.bReport?.summary || "待完成课堂实施效果评估", 6), excelCell(`H${row}`, calc.bScore, 6, calc.bScore == null ? undefined : `SUM(H${first}:H${row - 1})`)], 32)); merges.push(`A${row}:C${row}`, `F${row}:G${row}`); row += 2;
   };
   const addC = () => {
@@ -1199,6 +1240,7 @@ async function extractClassroomPlan(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if(request.method==='GET'&&['/assessment-materials.js','/assessment-navigation.js'].includes(url.pathname))return new Response(url.pathname==='/assessment-materials.js'?MATERIALS_JS:NAVIGATION_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
     if(request.method==='GET'&&url.pathname==='/evaluation-model.js')return new Response(MODEL_SELECTOR_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
     if(request.method==='GET'&&url.pathname==='/evaluation-diagnostics.js')return new Response(DIAGNOSTICS_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
     if(url.pathname.startsWith('/api/')){

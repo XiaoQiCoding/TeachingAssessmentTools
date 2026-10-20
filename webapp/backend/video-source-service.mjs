@@ -98,9 +98,13 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
       await execute(process.env.FFMPEG_PATH||ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-ss',String(start),'-i',entry.file,'-t',String(duration),'-vf','fps=fps=1/4:start_time=0:round=up,scale=w=min(640\\,iw):h=min(360\\,ih):force_original_aspect_ratio=decrease','-frames:v',String(Math.ceil(duration/4)),'-q:v','5','-threads','1',path.join(dir,'frame-%03d.jpg')],{windowsHide:true,timeout:120000,maxBuffer:1024*1024,signal});
       // Explicit timestamps: one still every four seconds. These are location clues only.
       const frames=[];
-      for(let offset=0;offset<duration;offset+=4){
+      const files=(await fs.readdir(dir)).filter(name=>/^frame-\d{3}\.jpg$/.test(name)).sort();
+      if(!files.length)throw problem('本段未提取到可读取画面，请检查视频尾部是否完整。',422,'SCREEN_FRAMES_EMPTY');
+      for(const name of files){
         signal?.throwIfAborted();
-        const output=path.join(dir,`frame-${String(offset/4+1).padStart(3,'0')}.jpg`);
+        const offset=(Number(name.match(/\d+/)[0])-1)*4;
+        if(offset>=duration)continue;
+        const output=path.join(dir,name);
         frames.push({time_seconds:offset,blob:new Blob([await fs.readFile(output)],{type:'image/jpeg'})});
       }
       return frames;

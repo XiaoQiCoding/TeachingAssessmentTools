@@ -4,17 +4,19 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const read = file => fs.readFile(path.join(root, file), "utf8");
-const [template, html, classroomHtml, pre, post, schemaText, modelScript, diagnosticScript] = await Promise.all([
+const [template, html, classroomHtml, pre, post, schemaText, modelScript, diagnosticScript, materialScript, navigationScript] = await Promise.all([
   read("backend/worker.template.js"), read("frontend/index.html"), read("frontend/classroom.html"),
   read("skills/special-education-preclass/SKILL.md"),
   read("skills/special-education-postclass/SKILL.md"),
-  read("shared/evaluation.schema.json"),read('frontend/evaluation-model.js'),read('frontend/evaluation-diagnostics.js')
+  read("shared/evaluation.schema.json"),read('frontend/evaluation-model.js'),read('frontend/evaluation-diagnostics.js'),read('frontend/assessment-materials.js'),read('frontend/assessment-navigation.js')
 ]);
 const output = template
   .replace("__PAGE_HTML__", JSON.stringify(html))
   .replace("__CLASSROOM_HTML__", JSON.stringify(classroomHtml))
   .replace('__MODEL_SELECTOR_JS__',JSON.stringify(modelScript))
   .replace('__DIAGNOSTICS_JS__',JSON.stringify(diagnosticScript))
+  .replace('__MATERIALS_JS__',JSON.stringify(materialScript))
+  .replace('__NAVIGATION_JS__',JSON.stringify(navigationScript))
   .replace("__PRE_SKILL__", JSON.stringify(pre))
   .replace("__POST_SKILL__", JSON.stringify(post))
   .replace("__OUTPUT_SCHEMA__", JSON.stringify(JSON.parse(schemaText)));

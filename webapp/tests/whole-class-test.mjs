@@ -35,7 +35,7 @@ assert.equal(merge([old],[next],['old'])[0].completion_quality,'unknown','Confir
 assert.equal(merge([old],[{...next,student_id:'S2'}]).length,2,'Different students remain separate');
 
 // Execute the actual automatic entry point with no transcript capability at all.
-const start=html.slice(html.indexOf('  async function startAssessment(){'),html.indexOf("  $('#startAssessment').onclick"));
+const start=html.slice(html.indexOf('  async function startAssessment(options={}){'),html.indexOf("  $('#startAssessment').onclick"));
 const controls=new Map(),$=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',checked:true,classList:{add(){},remove(){},toggle(){}},appendChild(){}});return controls.get(key)};
 $('#videoFile').files=[{}];$('#goals').value='分类';$('#video').duration=125;
 const createEntry=new Function('$','document','fetch',code+`

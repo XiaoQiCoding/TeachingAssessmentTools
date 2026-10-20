@@ -17,3 +17,43 @@ const resumed=[];await runWindowQueue(paused,async w=>resumed.push(w.id),new Abo
 assert.ok(html.includes('!candidates[Number(card.dataset.candidate)].playback_viewed'),'Confirmation requires opening and playing source footage');
 assert.ok(html.includes("events.splice(i,1);reportData=null"),'Changing/ignoring evidence invalidates its previous confirmation');
 console.log('Automatic queue: partial failure, resume, cancellation, coverage union and review gates passed');
+
+// Display sorting must retain original indices: edits, playback and confirmation use them.
+const reviewCode=html.slice(html.indexOf('  function candidateDisplayRows('),html.indexOf('  function renderCandidates('));
+const reviewItems=[{id:'late',start_seconds:30,end_seconds:40,playback_viewed:true},{id:'early-long',start_seconds:2,end_seconds:9,playback_viewed:false},{id:'early-short',start_seconds:2,end_seconds:5,playback_viewed:true},{id:'ignored',start_seconds:1,end_seconds:3,playback_viewed:true,ignored:true}];
+const before=JSON.stringify(reviewItems),reviewControls=new Map();
+const reviewControl=key=>{if(!reviewControls.has(key))reviewControls.set(key,{});return reviewControls.get(key)};
+let saved=0;
+const cards=reviewItems.map((item,index)=>{
+ const check={checked:false,disabled:false,closest:()=>card},reviewed={checked:false},status={textContent:''};
+ const card={dataset:{candidate:String(index)},classList:{toggle(){}},querySelector:selector=>selector==='.candidate-check'?check:selector==='[data-reviewed]'?reviewed:status};return card;
+});
+const reviewDocument={querySelectorAll:selector=>selector==='.candidate-check'?cards.map(card=>card.querySelector(selector)):cards};
+const reviewHelper=new Function('$','document','candidates','events','saveDraft','let autoBusy=false,videoIdentity="video",analysisInfo={};'+reviewCode+';return {rows:candidateDisplayRows,update:updateCandidateActions,toggle:toggleReviewedCandidates}')(reviewControl,reviewDocument,reviewItems,[],()=>saved++);
+const sorted=reviewHelper.rows(reviewItems);
+assert.deepEqual(sorted.map(row=>row.index),[3,2,1,0]);assert.equal(JSON.stringify(reviewItems),before,'Sorting never changes generated content or indices');
+reviewHelper.update();assert.equal(reviewControl('#selectAllCandidates').disabled,false);assert.equal(reviewControl('#acceptCandidates').disabled,true);assert.ok(reviewControl('#candidateHint').textContent.includes('已回看 2 条'));
+reviewHelper.toggle();assert.deepEqual(cards.map(card=>card.querySelector('.candidate-check').checked),[true,false,true,false]);assert.equal(reviewControl('#acceptCandidates').disabled,false);assert.ok(reviewControl('#candidateSelectionStatus').textContent.includes('已勾选 2 条'));assert.equal(saved,1);
+assert.deepEqual(reviewItems.map(item=>Boolean(item.selected_for_review)),[true,false,true,false]);assert.ok(reviewItems.every(item=>!item.confirmed),'Bulk selection never confirms evidence');
+reviewHelper.toggle();assert.ok(cards.every(card=>!card.querySelector('.candidate-check').checked));assert.equal(reviewControl('#acceptCandidates').disabled,true);
+reviewItems.forEach(item=>item.playback_viewed=false);reviewHelper.update();assert.equal(reviewControl('#selectAllCandidates').disabled,true);reviewHelper.toggle();assert.ok(reviewControl('#candidateSelectionStatus').textContent.includes('目前没有已回看'));
+assert.ok(html.includes('candidateDisplayRows(recommendedWindows).map(({item:w,index})=>'),'Recommended windows preserve their original edit/playback mapping too');
+console.log('Candidate review: chronological display, stable source indices, watched-only selection, feedback, persistence and confirmation separation passed');
+const batchHelpers=new Function(reviewCode+';return {adopt:buildAiBatchAcceptance,undo:undoAiBatchAcceptance}')();
+const human={id:'human',review_method:'playback',reviewed_clip:true,note:'Reviewer edited this fact'},batchCandidate=(id,extra={})=>({id,video_identity:'video',source:'ai_candidate',analysis_source:'continuous_clip',start_seconds:1,end_seconds:5,note:'AI fact',outcome:'negative',...extra});
+const batchInput=[batchCandidate('human'),batchCandidate('new'),batchCandidate('new'),batchCandidate('ignored',{ignored:true}),batchCandidate('frames',{analysis_source:'sampled_frames'}),batchCandidate('other',{video_identity:'other'})],batchBefore=JSON.stringify(batchInput);
+const additions=batchHelpers.adopt(batchInput,[human],'video','now');assert.equal(additions.length,1);assert.equal(additions[0].outcome,'negative','Batch acceptance includes negative evidence');assert.equal(additions[0].reviewed_clip,false);assert.equal(additions[0].review_method,'ai_batch');assert.equal(additions[0].reviewed_at,null);assert.equal(JSON.stringify(batchInput),batchBefore,'AI originals are preserved');
+assert.deepEqual(batchHelpers.undo([human,...additions],['human','new']),[human],'Undo removes AI batch additions only');
+const subsequentlyReviewed={...additions[0],review_method:'playback',reviewed_clip:true};assert.deepEqual(batchHelpers.undo([human,subsequentlyReviewed],['new']),[human,subsequentlyReviewed],'Later human review survives batch undo');
+console.log('One-click adoption: originals/manual edits preserved, no duplicate or ignored/foreign/frame candidates, no fake playback, reversible additions passed');
+
+const backupValidator=html.slice(html.indexOf('  function validateAssessmentBackup('),html.indexOf("  $('#restoreAssessment').onclick"));
+const validateBackup=new Function(backupValidator+';return validateAssessmentBackup')();
+const originalBackup={backup_version:1,draft:{saved_at:1,step:1,video_identity:'sample',candidates:[{id:'original-id',start_seconds:1,end_seconds:5,note:'Original model evidence'}],events:[],recommended_windows:[{status:'analyzed'}],observation_tasks:[]}};
+const originalBackupText=JSON.stringify(originalBackup),restoredBackup=validateBackup(originalBackup);
+assert.equal(restoredBackup.step,3);assert.ok(restoredBackup.saved_at>1);assert.equal(restoredBackup.candidates[0].id,'original-id');assert.equal(restoredBackup.candidates[0].note,'Original model evidence');assert.equal(JSON.stringify(originalBackup),originalBackupText);
+assert.throws(()=>validateBackup({backup_version:1,draft:{}}));
+assert.throws(()=>validateBackup({...originalBackup,draft:{...originalBackup.draft,candidates:[...originalBackup.draft.candidates,...originalBackup.draft.candidates]}}));
+assert.ok(html.includes('plan_source_key:loadedPlanKey'),'Plan identity survives refresh');
+assert.ok(html.includes("key!==loadedPlanKey&&(candidates.length||events.length||recommendedWindows.some"),'Unconfirmed AI results also require an explicit new-analysis confirmation');
+console.log('Assessment restore: backup validation, stable evidence IDs/content, fresh draft lifetime and protection of unconfirmed analysis passed');
