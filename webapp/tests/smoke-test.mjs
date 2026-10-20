@@ -13,6 +13,7 @@ globalThis.fetch = async (_url, options) => {
   if (String(_url).includes("/anthropic/v1/messages")) return new Response(JSON.stringify({
     content: [{ type: "text", text: JSON.stringify({ summary: "发现一条候选证据", candidates: [{ start_seconds: 5, end_seconds: 12, phase: "tool_use", type: "response", student_id: "待确认", outcome: "positive", assistance: "gesture", confidence: "medium", note: "学生在手势提示后完成操作", reason: "对应课堂目标" }] }) }]
   }), { headers: { "content-type": "application/json" } });
+  if (JSON.stringify(body.messages).includes("课堂观察任务参考表")) return new Response(JSON.stringify({ choices:[{message:{content:JSON.stringify({observation_tasks:[{task:"模仿跳跃",success_criteria:"学生按指令做出跳跃动作",allowed_assistance:"允许手势提示",basis:"教案目标"}]})}}]}),{headers:{"content-type":"application/json"}});
   if (JSON.stringify(body.messages).includes("课堂视频观察计划")) return new Response(JSON.stringify({
     choices: [{ message: { content: "LESSON\t小青蛙找家\nGOAL\t学生能跟随指令完成动作\nSTEP\t教师示范\nINSTRUCTION\t请模仿小青蛙跳跃\nRESPONSE\t学生完成跳跃动作\nTRANSFER\t在新音乐中完成相同动作" } }], base_resp: { status_code: 0, status_msg: "success" }
   }), { headers: { "content-type": "application/json" } });
@@ -61,7 +62,7 @@ videoForm.append("frames", new File([new Uint8Array([255, 216, 255, 217])], "fra
 const videoResponse = await worker.fetch(new Request("https://example.test/api/classroom/video-candidates", { method: "POST", body: videoForm }), { MINIMAX_API_KEY: "test-key" });
 const videoResult = await videoResponse.json();
 if (!videoResponse.ok || videoResult.candidates.length !== 1 || videoResult.candidates[0].confirmed !== false || videoResult.analysis.mode !== "sampled_frames") throw new Error(JSON.stringify(videoResult));
-if (!JSON.stringify(outbound).includes("面部表情") || !JSON.stringify(outbound).includes("未见哭闹或尖叫")) throw new Error("Classroom emotion prompt is missing observable lenient criteria");
+if (!JSON.stringify(outbound).includes("面部表情") || !JSON.stringify(outbound).includes("不得依据抽样未见异常")) throw new Error("Classroom emotion prompt is missing observable lenient criteria");
 const classroomResponse = await worker.fetch(new Request("https://example.test/api/classroom/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lesson: { name: "测试课堂" }, students: [{ id: "S01", level: "基础层" }], events: [
   { id: "E1", phase: "baseline", type: "engagement", student_id: "S01", outcome: "negative", assistance: "none", start_seconds: 1, confidence: "high", note: "未参与", confirmed: true },
   { id: "E2", phase: "baseline", type: "response", student_id: "S01", outcome: "negative", assistance: "none", start_seconds: 4, confidence: "high", note: "未反应", confirmed: true },
@@ -70,7 +71,7 @@ const classroomResponse = await worker.fetch(new Request("https://example.test/a
   { id: "E5", phase: "tool_use", type: "response", student_id: "S01", outcome: "positive", assistance: "independent", start_seconds: 30, confidence: "high", note: "正确反应", confirmed: true }
 ] }) }), {});
 const classroom = await classroomResponse.json();
-if (!classroomResponse.ok || classroom.version !== "1.2" || classroom.dimensions.length !== 5 || classroom.dimensions.slice(0, 3).some(item => item.score == null) || classroom.dimensions[3].score !== 0 || classroom.dimensions[3].weighted_score !== 0 || classroom.dimensions[3].status !== "insufficient_evidence" || classroom.dimensions[4].score !== 5 || classroom.dimensions[4].status !== "supported" || classroom.scored_weight !== 48 || !Number.isFinite(classroom.module_b_score) || classroom.audit.rule_version !== "classroom-b-v3" || classroom.audit.ai_analysis_used !== false) throw new Error(JSON.stringify(classroom));
+if (!classroomResponse.ok || classroom.version !== "1.4" || classroom.dimensions.length !== 5 || classroom.dimensions.some(item => item.score !== null || item.status !== "insufficient_evidence") || classroom.scored_weight !== 0 || classroom.module_b_score !== null || classroom.audit.rule_version !== "classroom-b-v5") throw new Error("Old requests without reviewed source evidence must not produce full marks: "+JSON.stringify(classroom));
 if (!classroom.dimensions.every(item => item.weight === 12 && item.max_score === 5 && item.criterion && item.modification === "")) throw new Error("Module B rubric fields are incomplete or still contain modification advice");
 const exportResponse = await worker.fetch(new Request("https://example.test/api/classroom/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lesson: { name: "测试课堂" }, students: [{ id: "S01", level: "基础层" }], events: [
   { id: "E1", phase: "baseline", type: "engagement", student_id: "S01", outcome: "negative", assistance: "none", start_seconds: 1, confidence: "high", note: "未参与", confirmed: true },
@@ -104,8 +105,8 @@ const demoExportText = new TextDecoder().decode(demoExportBytes);
 if (!demoExportResponse.ok || demoExportBytes[0] !== 0x50 || demoExportBytes[1] !== 0x4b || !demoExportText.includes("核心演示") || !demoExportText.includes("模块 A") || !demoExportText.includes("模块 B") || demoExportText.includes("创新与推广综合加分")) throw new Error("Core demo XLSX export is invalid");
 const indexResponse = await worker.fetch(new Request("https://example.test/"), {});
 const indexHtml = await indexResponse.text();
-if (!indexResponse.ok || !indexHtml.includes("核心 Demo") || !indexHtml.includes("课前适配性评估") || !indexHtml.includes("课堂实施效果评估") || indexHtml.includes("创新推广加分项") || !indexHtml.includes("开始 AI 评估模块 A") || !indexHtml.includes("/api/evaluation/module-a") || !indexHtml.includes("导出 A+B 核心 Excel") || !indexHtml.includes("无证据按 0 分") || !indexHtml.includes("refreshBScoring")) throw new Error("Core demo page is incomplete");
+if (!indexResponse.ok || !indexHtml.includes("核心 Demo") || !indexHtml.includes("课前适配性评估") || !indexHtml.includes("课堂实施效果评估") || indexHtml.includes("创新推广加分项") || !indexHtml.includes("开始 AI 评估模块 A") || !indexHtml.includes("/api/evaluation/module-a") || !indexHtml.includes("导出 A+B 核心 Excel") || !indexHtml.includes("待补证") || !indexHtml.includes("refreshBScoring")) throw new Error("Core demo page is incomplete");
 const pageResponse = await worker.fetch(new Request("https://example.test/classroom"), {});
 const pageHtml = await pageResponse.text();
-if (!pageResponse.ok || !pageHtml.includes("AI 提取并确认课堂证据") || !pageHtml.includes("AI 分析 · 人工复核") || !pageHtml.includes("restoreDraft") || !pageHtml.includes("下载 Excel 表格") || !pageHtml.includes("评估指标描述") || !pageHtml.includes("version==='1.2'") || pageHtml.includes("创新推广加分项")) throw new Error("Classroom demo page was not served with rubric report and draft recovery");
+if (!pageResponse.ok || !pageHtml.includes("AI 提取并确认课堂证据") || !pageHtml.includes("AI 分析 · 人工复核") || !pageHtml.includes("restoreDraft") || !pageHtml.includes("下载 Excel 表格") || !pageHtml.includes("评估指标描述") || !pageHtml.includes("version==='1.4'") || pageHtml.includes("创新推广加分项")) throw new Error("Classroom demo page was not served with rubric report and draft recovery");
 console.log("Evaluation routes, AI video candidates, classroom rules, document extraction, and client pages are valid");

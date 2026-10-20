@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import worker from "../dist/server/index.js";
+import { createTranscriptionService } from "./transcription-service.mjs";
 
 const backendDir = path.dirname(fileURLToPath(import.meta.url));
 const envFiles = [path.resolve(backendDir, "../.env.local"), path.resolve(backendDir, "../.env"), path.resolve(backendDir, "../../.env.local"), path.resolve(backendDir, "../../.env")];
@@ -32,9 +33,11 @@ for (const envFile of envFiles) {
 
 const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 4174);
+const transcriptionService = createTranscriptionService(process.env);
 
 const server = http.createServer(async (incoming, outgoing) => {
   try {
+    if (await transcriptionService(incoming, outgoing, new URL(incoming.url || '/', `http://${host}:${port}`))) return;
     const chunks = [];
     for await (const chunk of incoming) chunks.push(chunk);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;
