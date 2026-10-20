@@ -9,7 +9,7 @@ async function score(events){
 }
 const samples=[event('E1','response'),event('E2','operation'),event('E3','generalization',{phase:'generalization',changed_context:'更换物品后仍按颜色分类'}),event('E4','emotion',{actual_response:'本片段学生表情平稳'})];
 const complete=await score(samples);
-assert.equal(complete.version,'1.4');assert.equal(complete.audit.rule_version,'classroom-b-v5');assert.equal(complete.module_b_score,48);
+assert.equal(complete.version,'1.4');assert.equal(complete.audit.rule_version,'classroom-b-v6');assert.equal(complete.module_b_score,48);
 const repeat=await score(samples);delete repeat.generated_at;const comparable={...complete};delete comparable.generated_at;assert.deepEqual(repeat,comparable);
 for(const row of complete.dimensions){assert.ok(row.scoring_basis);assert.ok(row.evidence.length);for(const evidence of row.evidence){assert.equal(evidence.video_identity,identity);assert.ok(evidence.end_seconds>evidence.start_seconds);assert.ok(evidence.actual_response)}}
 const rejected=await score([event('sample','response',{reviewed_clip:false}),event('teacher','response',{actual_response:''}),event('no-task','operation',{expected_response:''}),event('no-transfer','generalization',{phase:'generalization',changed_context:''}),event('wrong-video','emotion',{video_identity:'another'})]);

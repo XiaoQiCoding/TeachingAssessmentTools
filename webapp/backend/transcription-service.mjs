@@ -17,12 +17,15 @@ export function normalizeASR(payload, offset, length) {
   }).filter(segment=>segment.text);
 }
 
-export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.env.FFMPEG_PATH||ffmpegStatic, ttl=30*60*1000}={}) {
+export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.env.FFMPEG_PATH||ffmpegStatic, ttl=30*60*1000,log=()=>{}}={}) {
   const jobs=new Map();
+  const emit=(job,event)=>{try{log({diagnostic_id:job.diagnostic_id||job.id,job_id:job.id,...event})}catch{}};
   const respond=(response,status,data)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(data));};
   async function cleanup(job){if(job.dir){const dir=path.resolve(job.dir);if(path.dirname(dir)!==path.resolve(os.tmpdir())||!path.basename(dir).startsWith('teaching-transcript-'))throw new Error('临时目录校验失败');job.dir=null;await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}}
   async function run(job) {
+    const started=Date.now();let stage='audio_extract',stageStarted=started;
     try {
+      emit(job,{event:'stage_start',stage,duration_seconds:job.duration});
       job.status='extracting';job.message='正在提取音轨并按7分钟分段。';
       await new Promise((resolve,reject)=>{
         const child=spawn(ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-i',path.join(job.dir,'source.media'),'-map','0:a:0','-vn','-af','aresample=async=1:first_pts=0','-ar','16000','-ac','1','-c:a','pcm_s16le','-f','segment','-segment_time','420','-reset_timestamps','1',path.join(job.dir,'audio-%04d.wav')],{windowsHide:true});
@@ -31,6 +34,7 @@ export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.e
         child.on('exit',code=>{clearTimeout(timeout);job.child=null;code===0?resolve():reject(new Error('无法读取音轨，可能视频没有声音或格式不支持；可导入字幕或人工检查。'));});
       });
       const files=(await fs.readdir(job.dir)).filter(name=>/^audio-\d+\.wav$/.test(name)).sort();
+      emit(job,{event:'stage_complete',stage,elapsed_ms:Date.now()-stageStarted,chunks:files.length});stage='asr_request';
       job.total=files.length;job.segments=[];
       if(!files.length)throw new Error('没有可转写的音轨。');
       for(let index=0;index<files.length;index++){
@@ -40,7 +44,8 @@ export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.e
         body.append('file',new Blob([await fs.readFile(path.join(job.dir,files[index]))],{type:'audio/wav'}),files[index]);
         job.abort=new AbortController();const timeout=setTimeout(()=>job.abort.abort(),180000);
         let response,result;
-        try{response=await fetcher(`${String(env.MINIMAX_API_BASE||'https://api.minimaxi.com/v1').replace(/\/$/,'')}/speech_to_text`,{method:'POST',headers:{Authorization:`Bearer ${env.MINIMAX_API_KEY}`},body,signal:job.abort.signal});result=await response.json().catch(()=>null);}finally{clearTimeout(timeout)}
+        stageStarted=Date.now();
+        try{response=await fetcher(`${String(env.MINIMAX_API_BASE||'https://api.minimaxi.com/v1').replace(/\/$/,'')}/speech_to_text`,{method:'POST',headers:{Authorization:`Bearer ${env.MINIMAX_API_KEY}`},body,signal:job.abort.signal});result=await response.json().catch(()=>null);}finally{clearTimeout(timeout);emit(job,{event:'asr_attempt',stage,chunk:index+1,elapsed_ms:Date.now()-stageStarted,status:response?.status||null,provider_code:result?.base_resp?.status_code||result?.error?.code,provider_message:result?.error?.message||result?.base_resp?.status_msg})}
         if(!response.ok||result?.base_resp?.status_code)throw new Error(`语音转写服务未完成（${response.status}）；请检查当前密钥是否有 ASR 权限，或导入带时间字幕。`);
         const offset=index*420,remaining=Math.max(0,job.duration-offset);
         job.segments.push(...normalizeASR(result,offset,Math.min(420,remaining)));
@@ -49,7 +54,8 @@ export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.e
       if(job.cancelled)throw new Error('已取消转写。');
       job.segments=job.segments.map((segment,index)=>({...segment,id:`S${index+1}`}));
       job.status='complete';job.message=job.segments.length?'带时间文字稿已生成，请检查听不清或误识别的句子。':'音轨未识别出可用语句；不能据此推断课堂无活动。';
-    }catch(error){job.status=job.cancelled?'cancelled':'failed';job.message=error.name==='AbortError'?'语音转写超时或已取消，可重试或导入字幕。':error.message;job.segments=[];}
+      emit(job,{event:'transcription_complete',elapsed_ms:Date.now()-started,segments:job.segments.length});
+    }catch(error){job.status=job.cancelled?'cancelled':'failed';job.message=error.name==='AbortError'?'语音转写超时或已取消，可重试或导入字幕。':error.message;job.segments=[];emit(job,{event:'stage_failed',stage,elapsed_ms:Date.now()-started,error_type:error.name,message:job.message});}
     finally{await cleanup(job);job.finished=Date.now();}
   }
   return async function handle(incoming,outgoing,url){
@@ -61,7 +67,7 @@ export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.e
       if([...jobs.values()].filter(job=>!job.finished).length>=2){respond(outgoing,429,{error:'已有视频正在转写，请稍后重试。'});return true;}
       const duration=Number(incoming.headers['x-video-duration']);
       if(!Number.isFinite(duration)||duration<=0||duration>14400){respond(outgoing,400,{error:'请提供有效视频时长（不超过4小时）。'});return true;}
-      const job={id:randomUUID(),duration,status:'uploading',message:'正在接收视频。',completed:0,total:0,cancelled:false};jobs.set(job.id,job);
+      const job={id:randomUUID(),diagnostic_id:String(incoming.headers['x-diagnostic-id']||''),duration,status:'uploading',message:'正在接收视频。',completed:0,total:0,cancelled:false};jobs.set(job.id,job);
       try{
         job.dir=await fs.mkdtemp(path.join(os.tmpdir(),'teaching-transcript-'));
         let size=0;const cap=new Transform({transform(chunk,_encoding,callback){size+=chunk.length;callback(size>512*1024*1024?new Error('视频超过512MB，请压缩或导入字幕。'):null,chunk);}});

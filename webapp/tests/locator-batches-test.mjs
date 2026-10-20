@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../frontend/classroom.html',import.meta.url),'utf8');
+const code=html.slice(html.indexOf('  function splitLocatorBatches('),html.indexOf('  async function locateFromTranscript('));
+const store=new Map();let calls=[],fail=true;
+const rows=Array.from({length:80},(_,i)=>({id:`S${i+1}`,start_seconds:i*10,end_seconds:i*10+5,text:'请拍手'}));
+const mock=async(_url,{body})=>{const data=JSON.parse(body),first=data.segments[0].id;calls.push(first);if(first==='S30'&&fail)return Response.json({error:'模型服务暂不可用（529）'},{status:502});return Response.json({windows:[{id:'W1',task_id:'T1',start_seconds:data.segments[0].start_seconds,end_seconds:data.segments[1].end_seconds}],unlocated_tasks:[]})};
+const {split,run}=new Function('fetch','localStorage','DRAFT_KEY','DRAFT_TTL','timeLabel',code+';return {split:splitLocatorBatches,run:locateBatches}')(mock,{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},'test',86400000,String);
+const batches=split(rows);assert.equal(batches.length,3);assert.ok(batches.every(b=>b.length<=30));assert.deepEqual([...new Set(batches.flat().map(r=>r.id))],rows.map(r=>r.id));assert.equal(batches[0].at(-1).id,batches[1][0].id);
+const signal=new AbortController().signal;await assert.rejects(run(900,rows,[{task:'拍手'}],signal,()=>{}),/第 2 \/ 3 批/);fail=false;
+const result=await run(900,rows,[{task:'拍手'}],signal,()=>{});assert.deepEqual(calls,['S1','S30','S30','S59']);assert.equal(result.windows.length,3);assert.equal(result.unlocated_tasks.length,0);assert.equal(new Set(result.windows.map(w=>w.id)).size,3);
+await run(900,rows,[{task:'拍手'}],signal,()=>{});assert.equal(calls.length,4);
+await run(900,rows,[{task:'另一目标'}],signal,()=>{});assert.equal(calls.length,7,'Changed task conditions must invalidate cached batches');
+await run(900,rows,[{task:'另一目标'}],signal,()=>{},'another-video');assert.equal(calls.length,10,'Cache must be isolated by video identity');
+const abort=new AbortController();abort.abort();await assert.rejects(run(900,rows,[{task:'拍手'}],abort.signal,()=>{}));
+console.log('Locator batches retain sentence IDs, overlap boundaries, resume completed work, invalidate changed inputs and support cancellation');

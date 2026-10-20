@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import worker from '../dist/server/index.js';
+const source='教学目标：学生听到提示后拍手。\n'.repeat(500);
+const form=new FormData();form.set('lesson_plan',new File([source],'lesson.txt'));form.set('prepare_batches','true');
+const prepared=await worker.fetch(new Request('http://test/api/classroom/plan',{method:'POST',body:form}),{MINIMAX_API_KEY:'test'});
+const {chunks}=await prepared.json();assert.ok(chunks.length>1);assert.equal(chunks.join(''),source);assert.ok(chunks.every(c=>c.length<=2400));
+const html=fs.readFileSync(new URL('../frontend/classroom.html',import.meta.url),'utf8');
+const code=html.slice(html.indexOf('  async function extractPlanBatches('),html.indexOf('  async function extractLesson('));
+const store=new Map();let calls=[],fail=true;
+const fakeFetch=async(_url,{body})=>{if(body.get('prepare_batches'))return Response.json({chunks:['第一批','第二批','第三批']});const text=await body.get('lesson_plan').text();calls.push(text);if(text==='第二批'&&fail)return Response.json({error:'模拟超时'},{status:502});return Response.json({lesson:'测试课',goals:[text],observation_tasks:[]})};
+const fn=new Function('fetch','localStorage','DRAFT_KEY','DRAFT_TTL','autoAbort',code+';return extractPlanBatches;')(fakeFetch,{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},'test',86400000,null);
+const file=new File(['教案'],'test.txt',{lastModified:1});
+await assert.rejects(fn(file,()=>{}),/第 2 \/ 3 批/);fail=false;
+const result=await fn(file,()=>{});assert.deepEqual(calls,['第一批','第二批','第二批','第三批']);assert.equal(result.goals.length,3);
+await fn(file,()=>{});assert.equal(calls.length,4,'Completed batches should not be repeated');
+console.log('Plan batching retains all source text and resumes only unfinished batches');

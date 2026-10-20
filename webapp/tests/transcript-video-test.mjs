@@ -14,6 +14,29 @@ const region=source.slice(source.indexOf('function validateTranscript('),source.
 const {validate,resolve}=new Function(region+';return {validate:validateTranscript,resolve:resolveTranscriptWindows}')();
 const rows=[{id:'S1',start_seconds:10,end_seconds:15,text:'请分类'},{id:'S2',start_seconds:18,end_seconds:22,text:'再试一次'}];
 const tasks=[{id:'T1',task:'按颜色分类'}];
+const locatorHtml=await fs.readFile(new URL('../frontend/classroom.html',import.meta.url),'utf8');
+const locateSource=locatorHtml.slice(locatorHtml.indexOf('async function locateFromTranscript(){'),locatorHtml.indexOf('async function pollTranscript('));
+function locatorHarness(fetcher,timeout=95000){
+  const controls=new Map(),$=id=>{if(!controls.has(id))controls.set(id,{checked:true,disabled:false,textContent:'',classList:{add(){},remove(){}}});return controls.get(id)};
+  const api=new Function('$','fetch',`
+    let videoIdentity='test',transcriptState={video_identity:'test',duration:100,segments:[{id:'S1',start_seconds:1,end_seconds:2,text:'拍手'}]},locateBusy=false,locateAbort=null,transcriptBusy=false,recommendedWindows=[];
+    const tasksReady=()=>true,readObservationTasks=()=>[{task:'拍手'}],renderWindows=()=>{},saveDraft=()=>{};
+    const locateBatches=async(duration,segments,observation_tasks,signal)=>{const response=await fetch('/api/classroom/locate-transcript',{signal:AbortSignal.any([signal,AbortSignal.timeout(${timeout})])});return response.json()};
+    ${locateSource.replace('AbortSignal.timeout(95000)',`AbortSignal.timeout(${timeout})`)}
+    return {run:locateFromTranscript,cancel:()=>locateAbort.abort(),busy:()=>locateBusy};
+  `)($,fetcher);
+  return {...api,$};
+}
+const pending=(_url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));
+const cancelled=locatorHarness(pending),cancelRun=cancelled.run();
+assert.equal(cancelled.busy(),true);assert.equal(cancelled.$('#analyzeClip').disabled,true);
+cancelled.cancel();await assert.rejects(cancelRun,/已取消定位/);
+assert.equal(cancelled.busy(),false);assert.equal(cancelled.$('#analyzeClip').disabled,false);assert.equal(cancelled.$('#applyTranscriptEdits').disabled,false);
+const timed=locatorHarness(pending,10),keepTimer=setTimeout(()=>{},200);
+await assert.rejects(timed.run(),/定位等待超时/);clearTimeout(keepTimer);
+assert.equal(timed.$('#analyzeVideo').disabled,false);
+const success=locatorHarness(async()=>new Response(JSON.stringify({windows:[]})));
+await success.run();assert.equal(success.$('#locateTranscript').disabled,false);assert.ok(success.$('#transcriptStatus').textContent.includes('AI 推荐'));
 assert.throws(()=>validate([{...rows[0],end_seconds:300}],100));
 assert.throws(()=>validate([rows[0],rows[0]],100));
 const windows=resolve(JSON.stringify({windows:[{task_id:'T1',segment_ids:['S1','S2'],reason:'检查指令后学生尝试及再次提示'}]}),rows,tasks,100);

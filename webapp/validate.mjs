@@ -2,6 +2,8 @@ import fs from "node:fs";
 
 const html = fs.readFileSync("frontend/index.html", "utf8");
 const classroomHtml = fs.readFileSync("frontend/classroom.html", "utf8");
+new Function(fs.readFileSync('frontend/evaluation-model.js','utf8'));
+new Function(fs.readFileSync('frontend/evaluation-diagnostics.js','utf8'));
 for (const [name, page] of [["index", html], ["classroom", classroomHtml]]) {
   const start = page.lastIndexOf("<script>");
   const end = page.lastIndexOf("</script>");
