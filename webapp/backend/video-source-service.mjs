@@ -84,5 +84,31 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
     }catch(error){if(signal?.aborted)throw problem('已停止服务器切片。',499,'VIDEO_SLICE_CANCELLED');if(error.local_status)throw error;throw problem('服务器切片失败，请检查视频格式或视频处理工具配置。',422,'VIDEO_SLICE_FAILED')}
     finally{await fs.unlink(output).catch(()=>{});entry.busy--;entry.touched=now();slicing--}
   }
-  return {handle,prepareClip,cleanup,close:()=>clearInterval(timer)};
+  async function prepareScreen(id,start,duration,{signal}={}){
+    signal?.throwIfAborted();sourceDir(id);
+    const entry=sources.get(id);
+    if(!entry||now()-entry.touched>ttlMs)throw problem('临时视频已过期，请重新上传。',410,'VIDEO_SOURCE_EXPIRED');
+    if(!Number.isFinite(start)||!Number.isFinite(duration)||start<0||duration<=0||duration>120||start+duration>entry.duration_seconds+0.1)throw problem('初筛区间无效，最多120秒。');
+    if(slicing>=2)throw problem('视频处理任务较多，请稍后继续。',429);
+    slicing++;entry.busy++;entry.touched=now();
+    let dir;
+    try{
+      dir=await fs.mkdtemp(path.join(sourceDir(id),'screen-'));
+      await fs.utimes(sourceDir(id),new Date(now()),new Date(now()));
+      await execute(process.env.FFMPEG_PATH||ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-ss',String(start),'-i',entry.file,'-t',String(duration),'-vf','fps=fps=1/4:start_time=0:round=up,scale=w=min(640\\,iw):h=min(360\\,ih):force_original_aspect_ratio=decrease','-frames:v',String(Math.ceil(duration/4)),'-q:v','5','-threads','1',path.join(dir,'frame-%03d.jpg')],{windowsHide:true,timeout:120000,maxBuffer:1024*1024,signal});
+      // Explicit timestamps: one still every four seconds. These are location clues only.
+      const frames=[];
+      for(let offset=0;offset<duration;offset+=4){
+        signal?.throwIfAborted();
+        const output=path.join(dir,`frame-${String(offset/4+1).padStart(3,'0')}.jpg`);
+        frames.push({time_seconds:offset,blob:new Blob([await fs.readFile(output)],{type:'image/jpeg'})});
+      }
+      return frames;
+    }finally{
+      // mkdtemp always creates this direct child of the verified source directory.
+      if(dir&&path.dirname(dir)===sourceDir(id))await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});
+      entry.busy--;entry.touched=now();slicing--;
+    }
+  }
+  return {handle,prepareClip,prepareScreen,cleanup,close:()=>clearInterval(timer)};
 }

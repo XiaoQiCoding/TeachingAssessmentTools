@@ -28,6 +28,12 @@ try{
  const pixel=decode(output,['-frames:v','1','-vf','scale=1:1','-f','rawvideo','-pix_fmt','rgb24','-']);assert.ok(pixel[1]>pixel[0]*3&&pixel[1]>pixel[2]*3,'The cut must start in green, not at the beginning of the source');
  decode(output,['-map','0:a:0','-f','null','-']);
  const second=await sources.prepareClip(id,0,.5);assert.ok(second.size>0,'Reuse the same original without uploading again');
+ const stills=await sources.prepareScreen(id,1,1);assert.equal(stills.length,1);assert.equal(stills[0].time_seconds,0);
+ const still=path.join(dir,'screen.jpg');await fs.writeFile(still,Buffer.from(await stills[0].blob.arrayBuffer()));
+ const screenPixel=decode(still,['-frames:v','1','-vf','scale=1:1','-f','rawvideo','-pix_fmt','rgb24','-']);assert.ok(screenPixel[1]>screenPixel[0]*3,'Screening must seek to the requested region');
+ assert.ok(!(await fs.readdir(path.join(dir,'sources',id))).some(n=>n.startsWith('screen-')),'Screening temporary frames are deleted');
+ const tail=await sources.prepareScreen(id,1.9,.1);assert.equal(tail.length,1,'A very short final screening interval must still produce one frame');
+ for(const args of [[id,-1,1],[id,0,121],[id,1,2],['../../secret',0,1]])await assert.rejects(sources.prepareScreen(...args));
  assert.equal(events.filter(e=>e.stage==='source_upload').length,1);
  assert.equal(createHash('sha256').update(await fs.readFile(sample)).digest('hex'),originalHash);
  for(const args of [[id,-1,1],[id,0,61],[id,1,2],['../../secret',0,1]])await assert.rejects(sources.prepareClip(...args));
@@ -49,6 +55,9 @@ try{
    const source=path.resolve('../test/小青蛙找家上课视频.mp4'),stat=await fs.stat(source),started=Date.now();
    const uploaded=await upload(source);assert.equal(uploaded.status,201);
    const report={case:'小青蛙找家',original_bytes:stat.size,upload_ms:Date.now()-started,duration_seconds:uploaded.data.duration_seconds,cuts:[],model_called:false};
+   const screenStarted=Date.now(),screenFrames=await sources.prepareScreen(uploaded.data.source_id,120,120);
+   assert.equal(screenFrames.length,30);assert.equal(screenFrames.at(-1).time_seconds,116);
+   report.screening={duration_seconds:120,frames:screenFrames.length,bytes:screenFrames.reduce((n,f)=>n+f.blob.size,0),elapsed_ms:Date.now()-screenStarted};
    for(const start of [0,1320]){
      const begin=Date.now(),blob=await sources.prepareClip(uploaded.data.source_id,start,60);const elapsed=Date.now()-begin;
      assert.ok(blob.size<7500000,'One-minute clip must fit Qwen inline payload limit');

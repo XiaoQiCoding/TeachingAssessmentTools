@@ -70,6 +70,7 @@ const server = http.createServer(async (incoming, outgoing) => {
     const request = new Request(url, { method: incoming.method, headers, body,signal:requestAbort.signal });
     const response = await worker.fetch(request, {
       DIAGNOSTIC_ID:id,DIAGNOSTICS_TIMINGS:timings,DIAGNOSTICS_LOG:log,REQUEST_ABORT_SIGNAL:requestAbort.signal,
+      PREPARE_VIDEO_SCREEN:(sourceId,start,duration)=>videoSources.prepareScreen(sourceId,start,duration,{signal:requestAbort.signal}),
       PREPARE_VIDEO_CLIP:async(sourceId,start,duration)=>{
         const begin=Date.now();void log({event:'stage_start',stage:'video_slice',source_id:sourceId,start_seconds:start,duration_seconds:duration});
         try{const result=await videoSources.prepareClip(sourceId,start,duration,{signal:requestAbort.signal});void log({event:'stage_complete',stage:'video_slice',elapsed_ms:Date.now()-begin,bytes:result.size});return result}
