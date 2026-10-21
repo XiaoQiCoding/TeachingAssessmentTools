@@ -308,7 +308,20 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   });
   $('#downloadReport').addEventListener('click',()=>{if(!reportData)return;const blob=new Blob([JSON.stringify(reportData,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`${reportData.lesson||'课堂'}_课堂实施评估.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
   $('#downloadExcel').addEventListener('click',()=>{if(!reportData)return;const form=document.createElement('form'),input=document.createElement('input');form.method='POST';form.action='/api/classroom/export';form.style.display='none';input.type='hidden';input.name='payload';input.value=JSON.stringify(payload());form.appendChild(input);document.body.appendChild(form);form.submit();form.remove()});
-  $('#clearDraft').addEventListener('click',()=>{if(!confirm('确定清空当前评估记录中的模块 B 数据吗？'))return;localStorage.removeItem(DRAFT_KEY);localStorage.removeItem(DRAFT_KEY+'-plan-batches');localStorage.removeItem(DRAFT_KEY+'-locator-batches');reportData=null;events.splice(0);candidates=[];analysisInfo={used:false,mode:'manual',model:null,candidate_count:0};syncEvaluationRecord();location.reload()});
+  $('#clearDraft').addEventListener('click',async()=>{
+    if(window.evaluationModelLocked?.()){alert('请先完成或暂停当前分析，再清空本模块。');return;}
+    if(!confirm('确定清空当前记录的模块 B 吗？教案、视频、分析进度、证据和评分将全部清空。'))return;
+    try{
+      await window.assessmentMaterials.whenIdle();
+      await window.assessmentMaterials.removeRecord(ACTIVE_RECORD_ID,['lessonPlan','classroomVideo']);
+      restoringDraft=true;
+      for(const key of Object.keys(localStorage))if(key===DRAFT_KEY||key.startsWith(DRAFT_KEY+'-'))localStorage.removeItem(key);
+      if(ACTIVE_RECORD_ID==='standalone')localStorage.removeItem(LEGACY_DRAFT_KEY);
+      const records=JSON.parse(localStorage.getItem(RECORDS_KEY)||'[]'),active=records.find(item=>item.id===ACTIVE_RECORD_ID);
+      if(active){active.module_b={report:null,events:[],analysis_info:null};active.updated_at=new Date().toISOString();localStorage.setItem(RECORDS_KEY,JSON.stringify(records));}
+      location.reload();
+    }catch(error){alert('清空未完成：'+error.message);}
+  });
   document.querySelectorAll('#lessonName,#goals,#instructions,.student').forEach(input=>input.addEventListener('change',()=>{taskRevision++;reportData=null;saveDraft()}));
   window.addEventListener('beforeunload',saveDraft);
   function parseTimedTranscript(text,duration){
@@ -706,7 +719,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   });
   $('#candidateList').addEventListener('change',event=>{if(!event.target.classList.contains('candidate-check'))return;const card=event.target.closest('[data-candidate]'),item=candidates[Number(card.dataset.candidate)];card.querySelector('[data-reviewed]').checked=event.target.checked&&!!item.playback_viewed&&!item.ignored;item.selected_for_review=event.target.checked&&!item.ignored&&!!item.playback_viewed;updateCandidateActions();saveDraft()});
   $('#analyzeClip').onclick=analyzeClip;
-  window.evaluationAnalysisRunning=()=>autoBusy;window.evaluationModelLocked=()=>autoBusy||clipBusy||transcriptBusy||locateBusy||taskGenerating||$('#extractPlan').disabled;
+  window.discardAssessment=()=>{restoringDraft=true};window.evaluationAnalysisRunning=()=>autoBusy;window.evaluationModelLocked=()=>autoBusy||clipBusy||transcriptBusy||locateBusy||taskGenerating||$('#extractPlan').disabled;
   if(new URLSearchParams(location.search).get('embedded')==='1')document.body.classList.add('embedded');
   document.querySelectorAll('.sidebar a').forEach(link=>{const view=link.textContent.includes('总览')?'overview':link.textContent.includes('模块 A')?'moduleA':'moduleB';link.href='/?record='+encodeURIComponent(ACTIVE_RECORD_ID)+'#'+view;});
   renderCandidates();renderEvents();if(!restoreDraft())showStep(1,false);updateAutoProgress();if(pendingEvidence){showStep(2,false);$('#videoMeta').textContent='请重新选择评分时使用的原视频，选择后将自动回放对应证据片段。'}

@@ -43,5 +43,13 @@
       message('已恢复上次选择：'+names(files));
     }catch{restoring=false;message('本浏览器暂不能恢复材料，请重新选择原文件；评分记录已保留。')}
   }
-  window.assessmentMaterials={bind,read,write,whenIdle:()=>Promise.allSettled([...pending])};
+  async function removeRecord(recordId,slots=null){
+    const db=await open();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction('materials','readwrite'),store=tx.objectStore('materials'),request=store.openCursor();
+      request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;if(slots?slots.some(slot=>cursor.key===`${recordId}:${slot}`):String(cursor.key).startsWith(`${recordId}:`))cursor.delete();cursor.continue()};
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('材料清理未完成'));
+    });
+  }
+  window.assessmentMaterials={bind,read,write,removeRecord,whenIdle:()=>Promise.allSettled([...pending])};
 })();
