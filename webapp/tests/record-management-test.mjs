@@ -15,7 +15,7 @@ function setup({others=true,confirm=true,prompt='新名称',busy=false}={}){
   const store={records:JSON.stringify(others?[current,other]:[current]),[draftKey]:'old',[draftKey+'-plan-batches']:'old',[draftKey+'-locator-batches']:'old',[draftKey+'-before-restore']:'old','classroom-evaluation-draft-v4-other':'keep'};
   const materials=new Map([['current:moduleA.files',['photo']],['current:lessonPlan',['lesson']],['current:classroomVideo',['video']],['other:classroomVideo',['keep']]]);
   const calls=[],elements=new Map();
-  const element=selector=>{if(!elements.has(selector))elements.set(selector,{dataset:{},disabled:false,value:'',textContent:'',listeners:{},addEventListener(type,fn){this.listeners[type]=fn},replaceChildren(...children){this.children=children},getAttribute(){return null},cloneNode(){return {querySelectorAll:()=>[]}}});return elements.get(selector)};
+  const element=selector=>{if(!elements.has(selector))elements.set(selector,{dataset:{},disabled:false,value:'',textContent:'',listeners:{},classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.listeners[type]=fn},replaceChildren(...children){this.children=children},getAttribute(){return null},cloneNode(){return {querySelectorAll:()=>[]}}});return elements.get(selector)};
   let suppressSave=false;
   const frame=element('#classroomFrame');frame.contentWindow={evaluationModelLocked:()=>busy,discardAssessment(){suppressSave=true},assessmentMaterials:{whenIdle:async()=>calls.push('child-idle')}};
   const document={querySelector:element,querySelectorAll:()=>[],addEventListener(){},createElement:()=>({})};
