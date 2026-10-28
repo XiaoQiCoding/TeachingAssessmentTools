@@ -52,7 +52,7 @@ const server = http.createServer(async (incoming, outgoing) => {
   outgoing.setHeader('x-diagnostic-id',id);
   incoming.headers['x-diagnostic-id']=id;
   if(parsedUrl.pathname.startsWith('/api/')){
-    void log({event:'request_start',method:incoming.method,model:String(incoming.headers['x-evaluation-model']||process.env.DEFAULT_AI_MODEL||'qwen3.8-flash'),bytes:Number(incoming.headers['content-length'])||null});
+    void log({event:'request_start',method:incoming.method,model:String(incoming.headers['x-evaluation-model']||process.env.DEFAULT_AI_MODEL||'qwen3.8-max'),bytes:Number(incoming.headers['content-length'])||null});
     outgoing.once('finish',()=>void log({event:'request_end',http_status:outgoing.statusCode,elapsed_ms:Date.now()-started,timings}));
   }
   try {
@@ -83,7 +83,7 @@ const server = http.createServer(async (incoming, outgoing) => {
         catch(error){void log({event:'stage_failed',stage:'video_normalize',elapsed_ms:Date.now()-begin,error_type:error.name,message:error.message});throw error}
         finally{timings.normalization_ms=Date.now()-begin}
       },
-      DEFAULT_AI_MODEL: process.env.DEFAULT_AI_MODEL || 'qwen3.8-flash',
+      DEFAULT_AI_MODEL: process.env.DEFAULT_AI_MODEL || 'qwen3.8-max',
       QWEN_API_KEY: process.env.QWEN_API_KEY || '',
       QWEN_API_BASE: process.env.QWEN_API_BASE || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       MINIMAX_API_KEY: process.env.MINIMAX_API_KEY || "",
@@ -113,5 +113,5 @@ const server = http.createServer(async (incoming, outgoing) => {
 
 server.listen(port, host, () => {
   console.log(`本地评估网站已启动：http://${host}:${port}/`);
-  console.log(`默认评估模型：${process.env.DEFAULT_AI_MODEL || 'qwen3.8-flash'}；千问密钥：${process.env.QWEN_API_KEY ? '已配置' : '未配置'}；MiniMax 密钥：${process.env.MINIMAX_API_KEY ? '已配置' : '未配置'}。`);
+  console.log(`默认评估模型：${process.env.DEFAULT_AI_MODEL || 'qwen3.8-max'}；千问密钥：${process.env.QWEN_API_KEY ? '已配置' : '未配置'}；MiniMax 密钥：${process.env.MINIMAX_API_KEY ? '已配置' : '未配置'}。`);
 });

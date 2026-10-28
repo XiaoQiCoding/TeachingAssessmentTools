@@ -2,7 +2,7 @@
 (() => {
   const storageKey='teaching-evaluation-model-v1',select=document.querySelector('#evaluationModel'),hint=document.querySelector('#evaluationModelHint');
   const allowed=['qwen3.8-flash','qwen3.8-max','qwen3.7-plus','MiniMax-M3'];
-  let selected='qwen3.8-flash',pending=0;
+  let selected='qwen3.8-max',pending=0;
   try{const saved=localStorage.getItem(storageKey);if(allowed.includes(saved))selected=saved}catch{}
   if(select)select.value=selected;
   window.evaluationModelId=()=>selected;
@@ -11,7 +11,7 @@
   window.updateEvaluationModelControl=()=>{if(select)select.disabled=pending>0||Boolean(window.evaluationAnalysisRunning?.())};
   select?.addEventListener('change',()=>{
     if(pending||window.evaluationModelLocked?.()){select.value=selected;if(hint)hint.textContent='当前处理尚未结束，完成或暂停后再切换模型。';return}
-    selected=allowed.includes(select.value)?select.value:'qwen3.8-flash';
+    selected=allowed.includes(select.value)?select.value:'qwen3.8-max';
     try{localStorage.setItem(storageKey,selected)}catch{}
     describe();
   });

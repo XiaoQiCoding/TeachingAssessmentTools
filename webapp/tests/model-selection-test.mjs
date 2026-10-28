@@ -8,14 +8,14 @@ const request=(url,model,body)=>new Request('http://local'+url,{method:'POST',he
 try{
  globalThis.fetch=async(url,options)=>{calls.push({url,headers:options.headers,body:JSON.parse(options.body)});return Response.json({choices:[{message:{content:'OK'},finish_reason:'stop'}]})};
  let response=await worker.fetch(request('/api/classroom/model-readiness'),credentials),data=await response.json();
- assert.equal(data.model,'qwen3.8-flash');assert.equal(data.ready,true);assert.equal(calls[0].headers.Authorization,'Bearer qwen-test-secret');assert.equal(calls[0].body.enable_thinking,false);assert.equal(calls[0].body.max_tokens,128);assert.equal(calls[0].body.max_completion_tokens,undefined);
+ assert.equal(data.model,'qwen3.8-max');assert.equal(data.ready,true);assert.equal(calls[0].headers.Authorization,'Bearer qwen-test-secret');assert.equal(calls[0].body.enable_thinking,false);assert.equal(calls[0].body.max_tokens,128);assert.equal(calls[0].body.max_completion_tokens,undefined);
  assert.equal(calls[0].url,'https://qwen.example/compatible-mode/v1/chat/completions');
  response=await worker.fetch(request('/api/classroom/model-readiness','MiniMax-M3'),credentials);assert.equal((await response.json()).ready,true);
  assert.equal(calls.at(-1).headers.Authorization,'Bearer minimax-test-secret');assert.equal(calls.at(-1).body.model,'MiniMax-M3');
  const before=calls.length;
  response=await worker.fetch(request('/api/classroom/model-readiness','qwen3.8-max'),{MINIMAX_API_KEY:'minimax-test-secret'});assert.equal(response.status,503);assert.ok((await response.json()).error.includes('千问'));assert.equal(calls.length,before,'Never send a MiniMax credential to Qwen or silently fall back');
  response=await worker.fetch(request('/api/classroom/model-readiness','https://untrusted.example'),credentials);assert.equal(response.status,400);assert.equal(calls.length,before);
- const models=await worker.fetch(new Request('http://local/api/models'),credentials);const options=await models.json();assert.equal(options.default_model,'qwen3.8-flash');assert.ok(options.models.every(m=>m.configured));assert.ok(!JSON.stringify(options).includes('secret'));
+ const models=await worker.fetch(new Request('http://local/api/models'),credentials);const options=await models.json();assert.equal(options.default_model,'qwen3.8-max');assert.ok(options.models.every(m=>m.configured));assert.ok(!JSON.stringify(options).includes('secret'));
 
  const fact={start_seconds:1,end_seconds:4,phase:'tool_use',type:'operation',student_id:'S01',outcome:'positive',note:'学生将物品放入容器',task:'分类',expected_response:'放入对应容器',actual_response:'学生放入容器',completion_quality:'achieved'};
  globalThis.fetch=async(url,options)=>{calls.push({url,headers:options.headers,body:JSON.parse(options.body)});return Response.json({choices:[{message:{content:JSON.stringify({summary:'观察到学生操作',candidates:[fact]})},finish_reason:'stop'}]})};
@@ -31,14 +31,16 @@ try{
 
 const script=fs.readFileSync(new URL('../frontend/evaluation-model.js',import.meta.url),'utf8');
 function browserHarness(store=new Map()){
- const listeners={},events={},sent=[],select={value:'qwen3.8-flash',disabled:false,addEventListener:(name,fn)=>events[name]=fn},hint={};
+ const listeners={},events={},sent=[],select={value:'qwen3.8-max',disabled:false,addEventListener:(name,fn)=>events[name]=fn},hint={};
  const window={addEventListener:(name,fn)=>listeners[name]=fn,fetch:async(input,options)=>{sent.push({input,options});return Response.json({ok:true})}};
  const context={window,document:{querySelector:s=>s==='#evaluationModel'?select:hint},localStorage:{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},crypto:globalThis.crypto,location:{href:'http://local/classroom',origin:'http://local'},URL,Headers};
  vm.runInNewContext(script,context);return {window,select,hint,events,sent,store};
 }
-const first=browserHarness();assert.equal(first.window.evaluationModelId(),'qwen3.8-flash');
-await first.window.evaluationFetch('/api/classroom/plan',{method:'POST'});assert.equal(first.sent[0].options.headers.get('x-evaluation-model'),'qwen3.8-flash');
+const first=browserHarness();assert.equal(first.window.evaluationModelId(),'qwen3.8-max');
+assert.equal(browserHarness(new Map([['teaching-evaluation-model-v1','obsolete-model']])).window.evaluationModelId(),'qwen3.8-max','Invalid saved models use Max');
+assert.equal(browserHarness(new Map([['teaching-evaluation-model-v1','qwen3.8-flash']])).window.evaluationModelId(),'qwen3.8-flash','Keep an explicit saved model choice');
+await first.window.evaluationFetch('/api/classroom/plan',{method:'POST'});assert.equal(first.sent[0].options.headers.get('x-evaluation-model'),'qwen3.8-max');
 first.select.value='MiniMax-M3';first.events.change();assert.equal(browserHarness(first.store).window.evaluationModelId(),'MiniMax-M3','Choice persists across both module pages');
 first.window.evaluationModelLocked=()=>true;first.select.value='qwen3.8-max';first.events.change();assert.equal(first.select.value,'MiniMax-M3','Do not switch providers mid-analysis');
-for(const page of ['index.html','classroom.html']){const html=fs.readFileSync(new URL('../frontend/'+page,import.meta.url),'utf8');assert.ok(html.includes('id="evaluationModel"'));assert.ok(html.includes('src="/evaluation-model.js"'))}
+for(const page of ['index.html','classroom.html']){const html=fs.readFileSync(new URL('../frontend/'+page,import.meta.url),'utf8');assert.ok(html.includes('id="evaluationModel"'));assert.ok(html.includes('src="/evaluation-model.js"'));assert.ok(html.includes('<option value="qwen3.8-max" selected>千问 Max（默认）</option>'))}
 console.log('Model selection: Qwen default, credential isolation, both media adapters, source metadata, persistence and busy guards passed');

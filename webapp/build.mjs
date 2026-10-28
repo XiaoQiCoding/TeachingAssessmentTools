@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import "./validate.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
