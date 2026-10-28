@@ -1,5 +1,6 @@
 // Explicit real-provider integration test through application handlers, no browser storage writes.
 import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import worker from '../dist/server/index.js';
@@ -23,7 +24,20 @@ const ready=await call('model_readiness','/api/classroom/model-readiness');if(!r
 const names=await fs.readdir(path.join(root,'test')),lesson=names.find(n=>n.includes('小青蛙')&&n.endsWith('.docx'));
 if(process.argv.includes('--module-a-only')){
  const form=new FormData();form.set('files',new Blob([await fs.readFile(path.join(root,'test',lesson))]),lesson);form.set('basic',JSON.stringify({tool_name:'小青蛙找家'}));
- const result=await call('module_a_application','/api/evaluation/module-a',form);console.log(JSON.stringify({results_file:path.join(out,'results.json')}));process.exit(result.ok?0:2);
+ const result=await call('module_a_application','/api/evaluation/module-a',form);
+ console.log(JSON.stringify({results_file:path.join(out,'results.json')}));
+ if(!result.ok)process.exit(2);
+ const rows=result.data.dimensions;
+ assert.equal(rows?.length,5);
+ assert.deepEqual(rows.map(r=>r.id).sort(),['A1','A2','A3','A4','A5']);
+ for(const row of rows){
+  assert.ok(Number.isInteger(row.score)&&row.score>=0&&row.score<=5,`${row.id} score`);
+  assert.ok(typeof row.evidence==='string'&&row.evidence.trim(),`${row.id} evidence`);
+  assert.ok(typeof row.modification==='string'&&row.modification.trim(),`${row.id} advice`);
+  if(row.score<5)assert.doesNotMatch(row.modification,/^(?:暂无必要修改|需改进|建议完善|建议修改|待完善)[。.!！\s]*$/,`${row.id} deduction advice`);
+ }
+ console.log(JSON.stringify({verified:true,dimensions:rows.map(({id,score,modification})=>({id,score,modification}))}));
+ process.exit(0);
 }
 const prepare=new FormData();prepare.set('lesson_plan',new Blob([await fs.readFile(path.join(root,'test',lesson))]),lesson);prepare.set('prepare_batches','true');
 const extracted=await call('lesson_extract','/api/classroom/plan',prepare);if(!extracted.ok)process.exit(2);

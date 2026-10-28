@@ -110,3 +110,11 @@ const pageResponse = await worker.fetch(new Request("https://example.test/classr
 const pageHtml = await pageResponse.text();
 if (!pageResponse.ok || !pageHtml.includes("核对 AI 发现的片段") || !pageHtml.includes("AI 分析 · 人工复核") || !pageHtml.includes("restoreDraft") || !pageHtml.includes("下载 Excel 表格") || !pageHtml.includes("评估指标描述") || !pageHtml.includes("version==='1.4'") || pageHtml.includes("创新推广加分项")) throw new Error("Classroom demo page was not served with rubric report and draft recovery");
 console.log("Evaluation routes, AI video candidates, classroom rules, document extraction, and client pages are valid");
+
+const oldRecord=structuredClone(record);
+oldRecord.module_a.A1.modification='   ';
+const oldExportForm=new FormData();
+oldExportForm.set('payload',JSON.stringify(oldRecord));oldExportForm.set('module','A');
+const oldExport=await worker.fetch(new Request('https://example.test/api/evaluation/export',{method:'POST',body:oldExportForm}),{});
+const oldExportText=new TextDecoder().decode(await oldExport.arrayBuffer());
+if(!oldExport.ok||!oldExportText.includes('原评估未提供修改意见，可重新评估获取。')||!oldExportText.includes('A2 修改意见')) throw new Error('Historical advice export must explain blanks and preserve existing advice');

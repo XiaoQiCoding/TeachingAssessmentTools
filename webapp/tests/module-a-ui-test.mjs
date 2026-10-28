@@ -39,3 +39,18 @@ const stateSource=html.slice(html.indexOf('function aState('),html.indexOf('func
 const stateFor=record=>new Function('record','A_ITEMS',stateSource+';return aState()')(record,dimensions);
 assert.equal(stateFor(context.record).complete,true,'A legitimate zero must not become a missing score');
 assert.equal(stateFor({module_a:Object.fromEntries(dimensions.map(r=>[r.id,{score:'',evidence:''}]))}).complete,false,'Unassessed empty inputs must not become zeros');
+
+const buildSource=html.slice(html.indexOf('function buildA('),html.indexOf('function renderB('));
+const displayRecord={module_a:Object.fromEntries(dimensions.map(r=>[r.id,{score:5,evidence:'已有材料依据',modification:'   '}])),module_a_meta:{summary:'历史结果'}};
+const renderContext=vm.createContext({$,record:displayRecord,A_ITEMS:dimensions,esc:String,Date});
+for(const selector of ['#aState']) $(selector).classList.toggle=()=>{};
+vm.runInContext("let aFailure='';"+stateSource+buildSource+';buildA()',renderContext);
+assert.equal(($('#aBody').innerHTML.match(/原评估未提供修改意见，可重新评估获取。/g)||[]).length,5);
+displayRecord.module_a.A1.modification='可选优化：增加轮换提示。';
+vm.runInContext('buildA()',renderContext);
+assert.match($('#aBody').innerHTML,/可选优化：增加轮换提示。/);
+displayRecord.module_a.A1.score='';
+displayRecord.module_a.A1.modification='';
+vm.runInContext('buildA()',renderContext);
+assert.match($('#aBody').innerHTML,/<td>待 AI 评估<\/td>/);
+console.log('Module A advice display: historical blanks identified, saved advice preserved, unassessed rows remain pending');
