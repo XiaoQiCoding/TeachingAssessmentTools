@@ -11,7 +11,7 @@ const $=selector=>{
   if(!elements.has(selector))elements.set(selector,{files:[],value:'',textContent:'',disabled:false,classList:{add(){},remove(){}}});
   return elements.get(selector);
 };
-const dimensions=['A1','A2','A3','A4','A5'].map(id=>({id,score:5,evidence:'材料中有明确证据',status:'supported'}));
+const dimensions=['A1','A2','A3','A4','A5'].map(id=>({id,score:id==='A1'?0:5,evidence:'材料中有明确证据',status:'supported'}));
 let resolveRequest,saveCount=0,renderCount=0;
 const context=vm.createContext({$,FormData,Set,Date,record:{basic:{}},A_ITEMS:dimensions,alert:()=>assert.fail('Unexpected missing-material alert'),
   fetch:()=>new Promise(resolve=>resolveRequest=resolve),persist:()=>saveCount++,recalc:()=>renderCount++});
@@ -24,7 +24,7 @@ assert.match($('#aState').textContent,/正在读取材料/);
 resolveRequest(Response.json({dimensions,summary:'完成评估'}));
 await pending;
 assert.equal(saveCount,1);assert.equal(renderCount,1);assert.equal(button.disabled,false);
-assert.equal(context.record.module_a.A1.score,5);
+assert.equal(context.record.module_a.A1.score,0);
 const previous=context.record.module_a;
 const failed=button.onclick({currentTarget:button});
 resolveRequest(Response.json({error:'模拟模型服务不可用'},{status:503}));
@@ -34,3 +34,8 @@ assert.equal(context.record.module_a,previous,'Failed requests must preserve pre
 assert.match($('#aState').textContent,/模拟模型服务不可用/);
 assert.match($('#aState').textContent,/不是本次结果/);
 console.log('Module A UI: complete script parses, click starts request, success saves, failure is visible and previous results survive');
+
+const stateSource=html.slice(html.indexOf('function aState('),html.indexOf('function buildA('));
+const stateFor=record=>new Function('record','A_ITEMS',stateSource+';return aState()')(record,dimensions);
+assert.equal(stateFor(context.record).complete,true,'A legitimate zero must not become a missing score');
+assert.equal(stateFor({module_a:Object.fromEntries(dimensions.map(r=>[r.id,{score:'',evidence:''}]))}).complete,false,'Unassessed empty inputs must not become zeros');

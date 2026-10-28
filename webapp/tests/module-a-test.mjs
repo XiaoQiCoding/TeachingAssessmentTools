@@ -20,7 +20,8 @@ for (const dimensions of [rows.slice(0,4), [...rows.slice(0,4),rows[0]], rows.ma
 assert.throws(()=>read(''));
 assert.throws(()=>read(valid.slice(0,70)));
 const unknown = rows.map((r,i)=>i?r:{...r,score:null,status:'unknown',evidence:'材料没有提供可核对依据'});
-assert.equal(read(JSON.stringify({dimensions:unknown})).module_a_score, null);
+assert.equal(read(JSON.stringify({dimensions:unknown})).dimensions[0].score,2);
+assert.equal(read(JSON.stringify({dimensions:unknown})).dimensions[0].provisional,true);
 
 let outputs=[], requests=[];
 globalThis.fetch=async (_url,options)=>{
@@ -46,3 +47,16 @@ assert.equal(failed.body.code,'MODULE_A_INVALID_RESULT');
 assert.equal(requests.length,3);
 assert.equal(failed.body.dimensions,undefined);
 console.log('Module A format validation and bounded retries passed');
+
+const policyResult=dimensions=>read(JSON.stringify({dimensions}));
+const absent=rows.map(r=>({...r,score:null,status:'unknown',evidence:'没有该项直接材料依据',evidence_level:'missing'}));
+assert.deepEqual(policyResult(absent).dimensions.map(r=>r.score),[2,2,2,5,2]);
+const vague=rows.map(r=>({...r,score:1,status:'concern',evidence:'教案仅宽泛说明使用教具支持学习',evidence_level:'vague'}));
+assert.deepEqual(policyResult(vague).dimensions.map(r=>r.score),[2,2,2,5,2]);
+const risk=rows.map(r=>r.id==='A4'?{...r,score:3,status:'mixed',safety_risks:[{evidence:'材料明确写明学生直接接触尖锐刀具',deduction:4}]}:r);
+assert.equal(policyResult(risk).dimensions[3].score,1);assert.equal(policyResult(risk).audit.safety_veto,true);
+const zero=rows.map(r=>r.id==='A5'?{...r,score:0,status:'concern',evidence_level:'direct',evidence:'材料明确说明所有教具封死，学生无法接触或操作',exceptional_zero_reason:'材料明确说明全部封死，完全不能完成任何对应操作任务'}:r);
+assert.equal(policyResult(zero).dimensions[4].score,0);
+assert.equal(policyResult(zero.map(r=>({...r,exceptional_zero_reason:''}))).dimensions[4].score,2);
+assert.equal(policyResult(rows.map(r=>r.id==='A4'?{...r,score:1,status:'concern',evidence:'未提供材质尺寸和消毒说明，无法判断是否有小零件'}:r)).dimensions[3].score,5);
+console.log('Module A lenient policy: all five scored, provisional minimum 2, safety deduction, evidenced zero and no missing-info veto passed');

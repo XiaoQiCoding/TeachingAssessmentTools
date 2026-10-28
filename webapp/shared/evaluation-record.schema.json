@@ -60,10 +60,11 @@
       "type": "object",
       "required": ["score", "evidence", "modification"],
       "properties": {
-        "score": { "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 5 }, { "const": "" }] },
+        "score": { "oneOf": [{ "type": "integer", "minimum": 0, "maximum": 5 }, { "const": "" }] },
         "evidence": { "type": "string" },
         "modification": { "type": "string" },
-        "status": { "enum": ["supported", "mixed", "concern", "unknown"] }
+        "status": { "enum": ["supported", "mixed", "concern", "unknown"] },
+        "provisional": { "type": "boolean" }
       },
       "additionalProperties": false
     }

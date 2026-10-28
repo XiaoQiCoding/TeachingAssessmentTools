@@ -17,7 +17,7 @@ globalThis.fetch = async (_url, options) => {
   if (JSON.stringify(body.messages).includes("课堂视频观察计划")) return new Response(JSON.stringify({
     choices: [{ message: { content: JSON.stringify({lesson:"小青蛙找家",goals:["学生能跟随指令完成动作"],steps:["教师示范"],instructions:["请模仿小青蛙跳跃"],expected_responses:["学生完成跳跃动作"],generalization_tasks:["在新音乐中完成相同动作"],observation_tasks:[{task:"模仿跳跃",success_criteria:"学生按指令做出跳跃动作",allowed_assistance:"允许手势提示",basis:"教案目标"}]}) } }], base_resp: { status_code: 0, status_msg: "success" }
   }), { headers: { "content-type": "application/json" } });
-  if (String(body.messages.at(-1).content).includes("模块 A 量表")) return new Response(JSON.stringify({
+  if (String(body.messages.at(-1).content).includes("评分规则（仅模块A）")) return new Response(JSON.stringify({
     choices: [{ message: { content: `SUMMARY\t模块 A AI 评估完成\n${["A1", "A2", "A3", "A4", "A5"].map((id, index) => `A\t${id}\t${index === 3 ? 5 : 4}\tsupported\t测试材料中的 ${id} 客观证据\t${id} 修改建议`).join("\n")}` } }], base_resp: { status_code: 0, status_msg: "success" }
   }), { headers: { "content-type": "application/json" } });
   return new Response(JSON.stringify({
@@ -45,7 +45,7 @@ moduleAForm.set("basic", JSON.stringify({ tool_name: "测试教具", themes: ["�
 const moduleAResponse = await worker.fetch(new Request("https://example.test/api/evaluation/module-a", { method: "POST", body: moduleAForm }), { MINIMAX_API_KEY: "test-key" });
 const moduleAResult = await moduleAResponse.json();
 if (!moduleAResponse.ok || moduleAResult.kind !== "preclass_adaptation" || moduleAResult.dimensions.length !== 5 || moduleAResult.module_a_score !== 33.6 || moduleAResult.audit.safety_veto) throw new Error(JSON.stringify(moduleAResult));
-if (!outbound.some(content => typeof content === "string" && content.includes("每项从 5 分起评") && content.includes("材料未出现具体危险时给 5 分"))) throw new Error("Module A lenient deduction prompt is missing");
+if (!outbound.some(content => typeof content === "string" && content.includes("五项都给整数分") && content.includes("未发现具体危险=5") && content.includes("资料缺失不得记0分"))) throw new Error("Module A lenient deduction prompt is missing");
 const planForm = new FormData();
 planForm.append("lesson_plan", new File(["小青蛙找家教案：学生能跟随指令完成跳跃动作。"], "小青蛙找家.txt", { type: "text/plain" }));
 const planResponse = await worker.fetch(new Request("https://example.test/api/classroom/plan", { method: "POST", body: planForm }), { MINIMAX_API_KEY: "test-key" });
