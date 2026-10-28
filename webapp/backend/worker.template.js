@@ -309,7 +309,7 @@ async function callMiniMaxMedia(env, content) {
       if(!source||source.type!=='base64')throw new Error('千问素材缺少可读取的数据');
       const url=`data:${source.media_type};base64,${source.data}`;
       if(item.type==='image')return {type:'image_url',image_url:{url}};
-      if(item.type==='video')return {type:'video_url',video_url:{url},fps:env.VIDEO_FPS||2};
+      if(item.type==='video')return {type:'video_url',video_url:{url},fps:env.VIDEO_FPS||1};
       throw new Error('千问暂不支持这类素材');
     });
     return callMiniMax(env,[{role:'user',content:converted}],0.1,4096,120000,{direct:true});
@@ -465,7 +465,7 @@ async function analyzeClassroomVideo(request, env) {
   if (!env.MINIMAX_API_KEY) return json({ error: env.AI_PROVIDER==='qwen'?"尚未配置千问模型密钥":"尚未配置 MiniMax 模型密钥" }, 503);
   const form = await request.formData();
   if(form.get('analysis_stage')==='screening')return screenClassroomVideo(form,env);
-  const fps=Number(form.get('video_fps')||2);if(![1,2].includes(fps))return json({error:'精看抽帧频率无效'},400);env.VIDEO_FPS=fps;
+  const fps=Number(form.get('video_fps')||1);if(![1,2].includes(fps))return json({error:'精看抽帧频率无效'},400);env.VIDEO_FPS=fps;
   const mode = form.get("mode") === "frames" ? "frames" : "video";
   const clipOffset = Math.max(0, Number(form.get("clip_offset")) || 0);
   const observationPlan = String(form.get("observation_plan") || "").slice(0, 6000);

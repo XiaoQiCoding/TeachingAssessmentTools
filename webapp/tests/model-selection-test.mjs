@@ -23,7 +23,7 @@ try{
  response=await worker.fetch(request('/api/classroom/video-candidates','qwen3.8-max',form),credentials);data=await response.json();
  assert.equal(response.status,200);assert.equal(data.analysis.model,'qwen3.8-max');assert.equal(data.analysis.provider,'qwen');assert.equal(data.analysis.audio_available,false);
  assert.equal(data.candidates[0].start_seconds,21);assert.equal(data.candidates[0].analysis_model,'qwen3.8-max');assert.ok(data.candidates[0].limitations.includes('声音'));
- const media=calls.at(-1).body.messages[0].content;assert.ok(media.some(c=>c.type==='video_url'&&c.video_url.url.startsWith('data:video/mp4;base64,')&&c.fps===2));assert.ok(media.find(c=>c.type==='text').text.includes('禁止推断口头指令'));
+ const media=calls.at(-1).body.messages[0].content;assert.ok(media.some(c=>c.type==='video_url'&&c.video_url.url.startsWith('data:video/mp4;base64,')&&c.fps===1));assert.ok(media.find(c=>c.type==='text').text.includes('禁止推断口头指令'));
  const frames=new FormData();frames.set('mode','frames');frames.set('duration','10');frames.set('frames',new Blob(['fixture'],{type:'image/jpeg'}),'frame.jpg');frames.set('frame_times','[1]');
  response=await worker.fetch(request('/api/classroom/video-candidates','qwen3.7-plus',frames),credentials);data=await response.json();assert.equal(data.candidates[0].completion_quality,'unknown');assert.equal(data.candidates[0].outcome,'neutral');assert.ok(calls.at(-1).body.messages[0].content.some(c=>c.type==='image_url'));
  const asset=await worker.fetch(new Request('http://local/evaluation-model.js'),{});assert.equal(asset.status,200);assert.ok((await asset.text()).includes('x-evaluation-model'));
