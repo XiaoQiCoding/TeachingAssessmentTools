@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +6,7 @@ import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import ffmpegStatic from 'ffmpeg-static';
+import {createVideoStorage,MAX_VIDEO_BYTES,storageProblem} from './video-storage.mjs';
 
 export function normalizeASR(payload, offset, length) {
   if (!Array.isArray(payload?.segments)) throw new Error('语音服务未返回带时间的句子，不能用估算时间代替。');
@@ -17,11 +17,11 @@ export function normalizeASR(payload, offset, length) {
   }).filter(segment=>segment.text);
 }
 
-export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.env.FFMPEG_PATH||ffmpegStatic, ttl=30*60*1000,log=()=>{}}={}) {
+export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.env.FFMPEG_PATH||ffmpegStatic, ttl=30*60*1000,log=()=>{},storage=createVideoStorage()}={}) {
   const jobs=new Map();
   const emit=(job,event)=>{try{log({diagnostic_id:job.diagnostic_id||job.id,job_id:job.id,...event})}catch{}};
   const respond=(response,status,data)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(data));};
-  async function cleanup(job){if(job.dir){const dir=path.resolve(job.dir);if(path.dirname(dir)!==path.resolve(os.tmpdir())||!path.basename(dir).startsWith('teaching-transcript-'))throw new Error('临时目录校验失败');job.dir=null;await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}}
+  async function cleanup(job){if(job.dir){const dir=path.resolve(job.dir);if(path.dirname(dir)!==storage.directory||!path.basename(dir).startsWith('transcript-'))throw new Error('临时目录校验失败');await fs.rm(dir,{recursive:true,force:true});job.dir=null;}job.release?.();job.release=null;}
   async function run(job) {
     const started=Date.now();let stage='audio_extract',stageStarted=started;
     try {
@@ -64,17 +64,20 @@ export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.e
     for(const [id,job] of jobs)if(job.finished&&Date.now()-job.finished>ttl)jobs.delete(id);
     if(incoming.method==='POST'&&url.pathname===root){
       if(!env.MINIMAX_API_KEY){respond(outgoing,503,{error:'尚未配置 MiniMax 密钥。'});return true;}
+      if(Number(incoming.headers['content-length'])>MAX_VIDEO_BYTES){respond(outgoing,413,{error:'视频超过1.5GB，请压缩或导入字幕。'});return true;}
       if([...jobs.values()].filter(job=>!job.finished).length>=2){respond(outgoing,429,{error:'已有视频正在转写，请稍后重试。'});return true;}
       const duration=Number(incoming.headers['x-video-duration']);
       if(!Number.isFinite(duration)||duration<=0||duration>14400){respond(outgoing,400,{error:'请提供有效视频时长（不超过4小时）。'});return true;}
       const job={id:randomUUID(),diagnostic_id:String(incoming.headers['x-diagnostic-id']||''),duration,status:'uploading',message:'正在接收视频。',completed:0,total:0,cancelled:false};jobs.set(job.id,job);
       try{
-        job.dir=await fs.mkdtemp(path.join(os.tmpdir(),'teaching-transcript-'));
-        let size=0;const cap=new Transform({transform(chunk,_encoding,callback){size+=chunk.length;callback(size>512*1024*1024?new Error('视频超过512MB，请压缩或导入字幕。'):null,chunk);}});
+        job.dir=path.join(storage.directory,`transcript-${job.id}`);
+        job.release=await storage.reserve(job.dir,Number(incoming.headers['content-length'])||MAX_VIDEO_BYTES);
+        await fs.mkdir(job.dir,{mode:0o700});
+        let size=0;const cap=new Transform({transform(chunk,_encoding,callback){size+=chunk.length;callback(size>MAX_VIDEO_BYTES?Object.assign(new Error('视频超过1.5GB，请压缩或导入字幕。'),{local_status:413}):null,chunk);}});
         await pipeline(incoming,cap,createWriteStream(path.join(job.dir,'source.media')));
         if(!size)throw new Error('视频为空。');
         respond(outgoing,202,{job_id:job.id});void run(job);
-      }catch(error){job.status='failed';job.message=error.message;job.finished=Date.now();await cleanup(job);if(!outgoing.destroyed)respond(outgoing,400,{error:job.message});}
+      }catch(error){if(['ENOSPC','EDQUOT'].includes(error.code))error=storageProblem();job.status='failed';job.message=error.message;job.finished=Date.now();await cleanup(job);if(!outgoing.destroyed)respond(outgoing,error.local_status||400,{error:job.message});}
       return true;
     }
     const id=url.pathname.slice(root.length+1),job=jobs.get(id);

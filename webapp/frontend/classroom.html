@@ -37,7 +37,7 @@
 
             <div class="filebox"><label><strong>选择本节课教案</strong><input id="lessonFile" type="file" accept=".doc,.docx,.pptx,.txt,.md" /></label><div class="file-meta">支持 DOC、DOCX、PPTX、TXT、MD。点击开始分析后自动读取。</div></div>
 <p id="lessonMaterialStatus" class="mini-tip"></p>
-            <div class="filebox"><label><strong>选择课堂视频</strong><input id="videoFile" type="file" accept="video/*" /></label><p id="videoMaterialStatus" class="mini-tip"></p><div class="file-meta" id="videoMeta">尚未选择视频。已选材料会保存在本浏览器。</div></div>
+            <div class="filebox"><label><strong>选择课堂视频</strong><input id="videoFile" type="file" accept="video/*" /></label><p class="mini-tip">单个视频最大1.5GB；服务器临时视频总容量15GB，上传前会检查剩余空间。</p><p id="videoMaterialStatus" class="mini-tip"></p><div class="file-meta" id="videoMeta">尚未选择视频。已选材料会保存在本浏览器。</div></div>
               <label class="consent"><input type="checkbox" id="aiConsent" /><span>我确认本视频已取得学校及监护人授权，同意原视频上传至本服务临时切片（闲置6小时后清理），教案、文字稿和选取的视频片段或画面发送给所选模型（千问由阿里云处理，MiniMax 由 MiniMax 处理），用于本次分析。选用音轨转写时，音轨另发送至 MiniMax 语音转写服务。</span></label>
 <div class="two" style="margin:14px 0"><label>分析方式<select class="control" id="analysisStrategy"><option value="quick">快速分析：全课初筛，再精看重点</option><option value="full">完整检查：逐段分析全课</option></select></label><label>连续片段画面密度（千问）<select class="control" id="detailFps"><option value="1" selected>每秒1帧（默认，节省用量）</option><option value="2">每秒2帧（动作与辅助优先）</option></select></label></div><p class="mini-tip">快速分析每4秒检查一张画面覆盖全课，只对影响评分且可通过连续画面解决的疑点选段；已分析画面不重复提交；可能遗漏短暂行为。初筛线索不参与评分，可随时补充指定片段或改用完整检查。完整检查同样不能保证逐帧识别。</p><div id="uploadStatus" class="mini-tip" role="status">选择教案和视频后即可开始；已保存的教案可以继续使用。</div><div class="action-row"><button id="startAssessment" class="btn primary">开始分析</button><button id="openExistingReview" class="btn secondary hidden">查看已有片段</button></div>
 <details class="edit-details" id="planSettings"><summary>查看教学目标与评估条件（可选修改）</summary>            <div class="action-row" style="margin-top:12px"><button class="btn primary" id="extractPlan">智能提取教案要点</button></div><div id="planResult" class="plan-result"></div>
@@ -421,12 +421,12 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   $('#cancelTranscript').onclick=()=>cancelTranscription();
   async function prepareTranscript(){
     if(transcriptBusy||clipBusy)return;if(!tasksReady()){showStep(1);showTaskProblem();return}const file=$('#videoFile').files[0];if(!file||!$('#aiConsent').checked){$('#transcriptStatus').textContent='请先选择视频并确认音轨转写及分析授权。';return}
-    if(file.size>512*1024*1024){$('#transcriptStatus').textContent='视频超过512MB，请压缩视频或导入字幕继续定位。';return}const identity=videoIdentity;transcriptBusy=true;transcriptAbort=new AbortController();$('#analyzeVideo').disabled=true;$('#analyzeClip').disabled=true;$('#scanVisualClues').disabled=true;$('#cancelTranscript').classList.remove('hidden');
+    if(file.size>1.5*1024*1024*1024){$('#transcriptStatus').textContent='视频超过1.5GB，请压缩视频或导入字幕继续定位。';return}const identity=videoIdentity;transcriptBusy=true;transcriptAbort=new AbortController();$('#analyzeVideo').disabled=true;$('#analyzeClip').disabled=true;$('#scanVisualClues').disabled=true;$('#cancelTranscript').classList.remove('hidden');
     try{
       await waitForVideoMetadata();
       if(!transcriptState?.segments?.length||transcriptState.video_identity!==identity){
         let job=transcriptState?.video_identity===identity?transcriptState.job_id:null;
-        if(!job){$('#transcriptStatus').textContent='正在发送视频供服务器提取音轨，原视频仅作临时处理。';const response=await fetch('/api/classroom/transcription',{method:'POST',headers:{'content-type':'application/octet-stream','x-video-duration':String($('#video').duration)},body:file,signal:transcriptAbort.signal});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'转写接口不可用或视频过大，可导入字幕继续。');job=data.job_id;transcriptState={video_identity:identity,duration:$('#video').duration,job_id:job,segments:[]};saveDraft()}
+        if(!job){await checkVideoUploadCapacity(file,transcriptAbort.signal);$('#transcriptStatus').textContent='正在发送视频供服务器提取音轨，原视频仅作临时处理。';const response=await fetch('/api/classroom/transcription',{method:'POST',headers:{'content-type':'application/octet-stream','x-video-duration':String($('#video').duration)},body:file,signal:transcriptAbort.signal});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'转写接口不可用或视频过大，可导入字幕继续。');job=data.job_id;transcriptState={video_identity:identity,duration:$('#video').duration,job_id:job,segments:[]};saveDraft()}
         const data=await pollTranscript(job,transcriptAbort.signal);if(identity!==videoIdentity)throw new Error('视频已变更，转写结果未采用。');transcriptState={video_identity:identity,duration:data.duration_seconds,segments:data.segments,source:data.source,model:data.model};renderTranscript();saveDraft();
       }
       if(!transcriptState.segments.length)throw new Error('未识别到可用语句，请补充检查画面或导入字幕；不代表学生没有回应。');
@@ -463,11 +463,17 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   $('#closeReview').onclick=()=>{$('#reviewVideo').pause();$('#reviewOverlay').hidden=true;renderCandidates()};
   $('#reportDimensions').addEventListener('click',e=>{const button=e.target.closest('[data-evidence-id]');if(!button)return;const entry=reportData.dimensions.flatMap(d=>d.evidence).find(x=>x.event_id===button.dataset.evidenceId);if(entry)replayEvidence(entry)});
   let serverVideoSource=null;
+  async function checkVideoUploadCapacity(file,signal){
+    const response=await fetch(`/api/classroom/video-source?bytes=${file.size}`,{method:'GET',cache:'no-store',signal:AbortSignal.any([signal,AbortSignal.timeout(20000)])});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw Object.assign(new Error(data.error||'无法检查服务器视频空间，请稍后重试。'),{http_status:response.status,fatal:[413,507].includes(response.status)});
+  }
   async function ensureServerVideoSource(signal,diagnosticId){
     const file=$('#videoFile').files[0],identity=videoIdentity;
     if(!file)throw Object.assign(new Error('请重新选择原视频'),{fatal:false});
     if(serverVideoSource?.file===file&&serverVideoSource.identity===identity)return {...serverVideoSource,upload_ms:0};
-    if(file.size>512*1024*1024)throw Object.assign(new Error('原视频超过512MB，请压缩后重试。'),{fatal:true});
+    if(file.size>1.5*1024*1024*1024)throw Object.assign(new Error('原视频超过1.5GB，请压缩后重试。'),{fatal:true});
+    await checkVideoUploadCapacity(file,signal);
     const started=Date.now();
     const progress=()=>{$('#analysisState').textContent=`正在上传原视频（${(file.size/1024/1024).toFixed(1)}MB），已耗时 ${Math.round((Date.now()-started)/1000)} 秒；本次会话只上传一次，之后由服务器直接切片。`};
     progress();const timer=setInterval(progress,500);
@@ -720,6 +726,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
             continue;
           }
           w.status='failed';w.auto_retry={attempt,max_attempts:limit,exhausted:Boolean(error.retryable),message:error.message};
+          if([413,507].includes(error.http_status)){onProgress(windows,w);throw error;}
           // Avoid flooding the provider when its service remains unavailable. Per-clip permanent failures do not block other clips.
           // A fatal error marks a provider-wide problem (for example an expired credential), so it stops the remaining windows.
           blocked=Boolean(error.retryable||error.fatal);break;
@@ -785,6 +792,12 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     const workflowStarted=Date.now();let workflowError=null;globalThis.evaluationRunId=(globalThis.evaluationUuid?.()||crypto.randomUUID());globalThis.evaluationDiagnostics?.record('workflow',{status:'started'});autoBusy=true;autoAbort=new AbortController();$('#videoSlot').appendChild($('#video'));$('#video').classList.remove('hidden');showStep(3);document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',el.dataset.step==='2'));const signal=autoAbort.signal;setAutoControls(true);
     const timer=setInterval(()=>{if(autoBusy){const detail=autoStage==='plan'?$('#planResult').textContent:$('#analysisState').textContent;autoMessage(`${autoStage==='connection'?'检查模型连接':autoStage==='plan'?'建立教案参照':autoStage==='screening'?'全课画面初筛':autoStage==='followup'?'按任务缺口补查':analysisInfo.analysis_mode==='quick'?'评分疑点核查':'分段分析全课'}：${detail}`)}},500);
     try{
+      const uploadFile=$('#videoFile').files[0];
+      if(serverVideoSource?.file!==uploadFile||serverVideoSource.identity!==videoIdentity){
+        if(uploadFile.size>1.5*1024*1024*1024)throw new Error('原视频超过1.5GB，请压缩后重试。');
+        $('#analysisState').textContent='正在检查服务器剩余视频空间…';
+        await checkVideoUploadCapacity(uploadFile,signal);
+      }
       autoStage='connection';$('#analysisState').textContent='正在发送最小文字请求检查模型连接，尚未处理教案或视频…';autoMessage($('#analysisState').textContent);
       const readyResponse=await fetch('/api/classroom/model-readiness',{method:'POST',signal:AbortSignal.any([signal,AbortSignal.timeout(20000)])}),readiness=await readyResponse.json();
       if(!readyResponse.ok||readiness.ready!==true)throw new Error(readiness.error||'模型连接检查未通过，尚未处理教案或视频。');

@@ -24,7 +24,7 @@ const noWait = async () => {};
 const setup = html.slice(html.indexOf('  async function ensureServerVideoSource('), html.indexOf("  $('#cancelClip').onclick"));
 assert.ok(/if\(!file\)throw Object\.assign\(new Error\('请重新选择原视频'\),\{fatal:false\}\)/.test(setup),
   'missing video file must not be marked fatal');
-assert.ok(/if\(file\.size>512\*1024\*1024\)throw Object\.assign\(new Error\('原视频超过512MB，请压缩后重试。'\),\{fatal:true\}\)/.test(setup),
+assert.ok(/if\(file\.size>1\.5\*1024\*1024\*1024\)throw Object\.assign\(new Error\('原视频超过1.5GB，请压缩后重试。'\),\{fatal:true\}\)/.test(setup),
   'an oversized video is a permanent setup failure and stays fatal');
 
 // The queue still stops for a genuine provider-wide failure and leaves the rest pending.

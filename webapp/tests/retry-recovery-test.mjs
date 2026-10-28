@@ -30,6 +30,7 @@ let uploads=0,requests=0;const controls=new Map();
 const $=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',textContent:''});return controls.get(key)};
 $('#videoFile').files=[new Blob(['fixture'])];
 const fakeFetch=async url=>{
+ if(url.startsWith('/api/classroom/video-source?'))return Response.json({available_bytes:15*1024**3});
  if(url==='/api/classroom/video-source'){uploads++;return Response.json({source_id:'source-'+uploads,bytes:7})}
  requests++;if(requests===1)return Response.json({error:'video expired',retryable:false},{status:410});
  return Response.json({summary:'Recovered',windows:[],analysis:{timings:{},frame_count:1}});

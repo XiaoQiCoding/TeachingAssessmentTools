@@ -45,6 +45,7 @@ const start=html.slice(html.indexOf('  async function startAssessment(options={}
 const controls=new Map(),$=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',checked:true,classList:{add(){},remove(){},toggle(){}},appendChild(){}});return controls.get(key)};
 $('#videoFile').files=[{}];$('#goals').value='分类';$('#video').duration=245;$('#analysisStrategy').value='quick';$('#detailFps').value='2';
 const factory=new Function('$','document','fetch',helpers+coverage.replace('options={})','options={wait:async()=>{}})')+`
+ let serverVideoSource=null;const checkVideoUploadCapacity=async()=>{};
  let autoBusy=false,autoAbort=null,clipBusy=false,transcriptBusy=false,locateBusy=false,taskGenerating=false,loadedPlanKey='',autoStage='',videoIdentity='video',selectedVideoDuration=0,selectedWindowId=null,reportData=null,recommendedWindows=[],candidates=[],events=[],analysisInfo={},screenCalls=0,clipCalls=0,screenFailures=0;
  const tasksReady=()=>true,readObservationTasks=()=>[{task:'分类'}],waitForVideoMetadata=async()=>{},showStep=()=>{},setAutoControls=()=>{},autoMessage=()=>{},renderWindows=()=>{},renderCandidates=()=>{},renderEvents=()=>{},updateAutoProgress=()=>{},saveDraft=()=>{},timeLabel=String;
  const analyzeScreenWindow=async w=>{screenCalls++;if(w.start_seconds===120&&screenFailures++<3){throw Object.assign(new Error('overload'),{retryable:true})}w.windows=[{start_seconds:w.start_seconds,end_seconds:Math.min(w.end_seconds,w.start_seconds+30),reason:'操作'}]};

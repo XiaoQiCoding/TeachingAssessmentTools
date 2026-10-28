@@ -39,6 +39,7 @@ const start=html.slice(html.indexOf('  async function startAssessment(options={}
 const controls=new Map(),$=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',checked:true,classList:{add(){},remove(){},toggle(){}},appendChild(){}});return controls.get(key)};
 $('#videoFile').files=[{}];$('#goals').value='分类';$('#video').duration=125;
 const createEntry=new Function('$','document','fetch',code+`
+  let serverVideoSource=null;const checkVideoUploadCapacity=async()=>{};
   let autoBusy=false,autoAbort=null,clipBusy=false,transcriptBusy=false,locateBusy=false,taskGenerating=false,loadedPlanKey='',autoStage='',videoIdentity='video',selectedVideoDuration=0,selectedWindowId=null,reportData=null,recommendedWindows=[],candidates=[],events=[],analysisInfo={};
   const tasksReady=()=>true,readObservationTasks=()=>[{task:'分类'}],waitForVideoMetadata=async()=>{},showStep=()=>{},setAutoControls=()=>{},autoMessage=()=>{},renderWindows=()=>{},renderCandidates=()=>{},renderEvents=()=>{},updateAutoProgress=()=>{},saveDraft=()=>{},timeLabel=String;
   const analyzeClip=async()=>{const w=recommendedWindows.find(w=>w.id===selectedWindowId);w.status='analyzed';w.summary='学生进行分类';};

@@ -5,12 +5,13 @@ import {randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import ffmpeg from 'ffmpeg-static';
+import {createVideoStorage,MAX_VIDEO_BYTES,MAX_STORED_VIDEO_BYTES,storageProblem} from './video-storage.mjs';
 
 const execute=promisify(execFile),validId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const problem=(message,status=400,code='INVALID_VIDEO_SOURCE')=>Object.assign(new Error(message),{local_status:status,code});
 
 // Only opaque identifiers cross the HTTP boundary; uploaded paths are never accepted.
-export function createVideoSourceService({directory=path.join(os.tmpdir(),'teaching-video-sources'),maxBytes=512*1024*1024,maxStoredBytes=2*1024*1024*1024,ttlMs=6*60*60*1000,now=Date.now}={}){
+export function createVideoSourceService({directory=path.join(os.tmpdir(),'teaching-video-sources'),maxBytes=MAX_VIDEO_BYTES,maxStoredBytes=MAX_STORED_VIDEO_BYTES,ttlMs=6*60*60*1000,now=Date.now,storage=createVideoStorage({directory,maxStoredBytes})}={}){
   const root=path.resolve(directory),sources=new Map();let uploading=false,slicing=0;
   const sourceDir=id=>{if(!validId.test(id))throw problem('视频编号无效');return path.join(root,id)};
   async function remove(id){
@@ -21,7 +22,13 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
   async function cleanup(){
     await fs.mkdir(root,{recursive:true,mode:0o700});
     for(const item of await fs.readdir(root,{withFileTypes:true})){
+      if(item.isDirectory()&&/^transcript-[a-f0-9-]+$/.test(item.name)){
+        const dir=path.join(root,item.name);
+        if(!storage.isReserved(dir)&&now()-(await fs.stat(dir)).mtimeMs>ttlMs)await fs.rm(dir,{recursive:true,force:true});
+        continue;
+      }
       if(!item.isDirectory()||!validId.test(item.name))continue;
+      if(storage.isReserved(sourceDir(item.name)))continue;
       const entry=sources.get(item.name);if(entry?.busy)continue;
       const stat=await fs.stat(sourceDir(item.name));
       if(now()-(entry?.touched??stat.mtimeMs)>ttlMs)await remove(item.name);
@@ -40,16 +47,22 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
   async function handle(req,res,url,{log=()=>{},diagnostic_id=null}={}){
     if(url.pathname!=='/api/classroom/video-source')return false;
     const send=(status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify({diagnostic_id,...data}))};
+    if(req.method==='GET'){
+      try{await cleanup();const capacity=await storage.capacity();const bytes=Number(url.searchParams.get('bytes')||0);
+        if(!Number.isSafeInteger(bytes)||bytes<0){send(400,{error:'视频大小无效。'});return true}
+        if(bytes>maxBytes){send(413,{error:'原视频超过1.5GB，请压缩后重试。',max_bytes:maxBytes});return true}
+        if(bytes>capacity.available_bytes){send(507,{error:storageProblem().message,...capacity,max_bytes:maxBytes});return true}
+        send(200,{...capacity,max_bytes:maxBytes});
+      }catch{send(503,{error:'暂时无法检查服务器视频空间，请稍后重试。'})}return true;
+    }
     if(req.method!=='POST'){send(405,{error:'请上传原视频'});return true}
     if(uploading){send(429,{error:'另一个原视频正在上传，请稍后重试。',retryable:true});return true}
-    if(Number(req.headers['content-length'])>maxBytes){send(413,{error:'原视频超过512MB，请压缩后重试。'});return true}
-    uploading=true;let id=null,bytes=0;const started=now();
+    if(Number(req.headers['content-length'])>maxBytes){send(413,{error:'原视频超过1.5GB，请压缩后重试。'});return true}
+    uploading=true;let id=null,bytes=0,release;const started=now();
     try{
-      await cleanup();let stored=0;
-      for(const item of await fs.readdir(root,{withFileTypes:true}))if(item.isDirectory()&&validId.test(item.name)){try{stored+=(await fs.stat(path.join(sourceDir(item.name),'source.media'))).size}catch{}}
-      const allowance=Math.min(maxBytes,maxStoredBytes-stored);
-      if(allowance<=0||Number(req.headers['content-length'])>allowance)throw problem('临时视频空间不足，请稍后重试。',507,'VIDEO_STORAGE_FULL');
-      id=randomUUID();const dir=sourceDir(id);await fs.mkdir(dir,{mode:0o700});
+      await cleanup();
+      const allowance=Number(req.headers['content-length'])||maxBytes;
+      id=randomUUID();const dir=sourceDir(id);release=await storage.reserve(dir,allowance);await fs.mkdir(dir,{mode:0o700});
       const file=path.join(dir,'source.media'),handle=await fs.open(file,'wx',0o600);
       try{for await(const chunk of req){bytes+=chunk.length;if(bytes>allowance)throw problem('视频超过上传或临时存储限制。',413);await handle.writeFile(chunk)}}finally{await handle.close()}
       if(!bytes)throw problem('没有收到视频内容');
@@ -59,10 +72,11 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
       send(201,{source_id:id,bytes,...metadata,expires_after_seconds:ttlMs/1000});
     }catch(error){
       if(id)await remove(id).catch(()=>{});
+      if(['ENOSPC','EDQUOT'].includes(error.code))error=storageProblem();
       const message=error.local_status?error.message:'原视频上传或读取失败，请重试。';
       void log({event:'stage_failed',stage:'source_upload',elapsed_ms:now()-started,bytes,message,error_type:error.name});
       if(!res.destroyed)send(error.local_status||500,{error:message,failure_detail:{diagnostic_id,stage:'source_upload',code:error.code||'UPLOAD_FAILED',message}});
-    }finally{uploading=false}
+    }finally{release?.();uploading=false}
     return true;
   }
   async function prepareClip(id,start,duration,{signal}={}){
@@ -114,5 +128,5 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
       entry.busy--;entry.touched=now();slicing--;
     }
   }
-  return {handle,prepareClip,prepareScreen,cleanup,close:()=>clearInterval(timer)};
+  return {handle,prepareClip,prepareScreen,cleanup,storage,close:()=>clearInterval(timer)};
 }
