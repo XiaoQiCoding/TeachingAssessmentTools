@@ -465,7 +465,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   let serverVideoSource=null;
   async function ensureServerVideoSource(signal,diagnosticId){
     const file=$('#videoFile').files[0],identity=videoIdentity;
-    if(!file)throw Object.assign(new Error('请重新选择原视频'),{fatal:true});
+    if(!file)throw Object.assign(new Error('请重新选择原视频'),{fatal:false});
     if(serverVideoSource?.file===file&&serverVideoSource.identity===identity)return {...serverVideoSource,upload_ms:0};
     if(file.size>512*1024*1024)throw Object.assign(new Error('原视频超过512MB，请压缩后重试。'),{fatal:true});
     const started=Date.now();
@@ -485,7 +485,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     const start=Number($('#clipStart').value),end=Number($('#clipEnd').value);await waitForVideoMetadata();
     if(start<0||end<=start||end>$('#video').duration||end-start>60){alert('请填写视频内的有效范围，单片段最多60秒。');return}
     const requestIdentity=videoIdentity;let windowSource=recommendedWindows.find(w=>w.id===selectedWindowId);if(windowSource&&(Number(windowSource.start_seconds)!==start||Number(windowSource.end_seconds)!==end)){selectedWindowId=null;windowSource=null}clipBusy=true;$('#analyzeClip').disabled=true;$('#analyzeVideo').disabled=true;$('#cancelClip').classList.remove('hidden');
-    const diagnosticId=crypto.randomUUID(),attemptStarted=Date.now(),clipAbort=new AbortController(),signal=AbortSignal.any([autoAbort?.signal||new AbortController().signal,clipAbort.signal]);let uploadMs=null,requestStarted=null,requestMs=null,responseData=null,failureDetail=null,attemptError=null,phase='source_upload',progressTimer=null;stopClip=()=>clipAbort.abort();
+    const diagnosticId=(globalThis.evaluationUuid?.()||crypto.randomUUID()),attemptStarted=Date.now(),clipAbort=new AbortController(),signal=AbortSignal.any([autoAbort?.signal||new AbortController().signal,clipAbort.signal]);let uploadMs=null,requestStarted=null,requestMs=null,responseData=null,failureDetail=null,attemptError=null,phase='source_upload',progressTimer=null;stopClip=()=>clipAbort.abort();
     globalThis.evaluationDiagnostics?.record('source_upload',{diagnostic_id:diagnosticId,status:'started',window_id:selectedWindowId});
     try{
       const source=await ensureServerVideoSource(signal,diagnosticId);uploadMs=source.upload_ms;signal.throwIfAborted();phase='request';
@@ -618,7 +618,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     return plan.filter(w=>w.status!=='analyzed').map(w=>({...w,source:'evidence_followup',reason:'评分疑点首次核查未解决，检查一个备选区间；仍不清楚则待评。'+w.reason}));
   }
   async function analyzeScreenWindow(w,signal){
-    const diagnosticId=crypto.randomUUID(),started=Date.now();let data=null,uploadMs=0,requestStart=null;
+    const diagnosticId=(globalThis.evaluationUuid?.()||crypto.randomUUID()),started=Date.now();let data=null,uploadMs=0,requestStart=null;
     try{
       const source=await ensureServerVideoSource(signal,diagnosticId);uploadMs=source.upload_ms;signal.throwIfAborted();
       const form=new FormData();for(const [key,value]of Object.entries({analysis_stage:'screening',video_source_id:source.source_id,clip_offset:w.start_seconds,duration:w.end_seconds-w.start_seconds,observation_plan:$('#observationPlan').value,window_id:w.id}))form.append(key,String(value));
@@ -721,6 +721,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
           }
           w.status='failed';w.auto_retry={attempt,max_attempts:limit,exhausted:Boolean(error.retryable),message:error.message};
           // Avoid flooding the provider when its service remains unavailable. Per-clip permanent failures do not block other clips.
+          // A fatal error marks a provider-wide problem (for example an expired credential), so it stops the remaining windows.
           blocked=Boolean(error.retryable||error.fatal);break;
         }
       }
@@ -775,13 +776,13 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     if(autoBusy)return;
     const currentPlan=$('#lessonFile').files[0],samePlan=!currentPlan||`${currentPlan.name}:${currentPlan.size}:${currentPlan.lastModified}`===loadedPlanKey;
     if(analysisInfo.analysis_mode===($('#analysisStrategy').value||'full')&&samePlan&&candidates.length&&recommendedWindows.length&&recommendedWindows.every(w=>w.status==='analyzed'||w.status==='deferred')&&!(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed')&&analysisInfo.task_plan===JSON.stringify(readObservationTasks())){showStep(3);$('#autoTitle').textContent='分析完成，请核对片段';autoMessage('已有分析结果完整，无需重复运行AI。请回放候选，核实后确认。');return;}
-    if(!$('#videoFile').files[0]){showStep(1);$('#uploadStatus').textContent='请先选择课堂视频；已保存的分析结果会继续保留。';return}
+    if(!$('#videoFile').files[0]){showStep(1);$('#uploadStatus').textContent=selectedVideoName?`请重新选择原视频「${selectedVideoName}」；浏览器刷新后不会保留文件，已保存的分析结果会继续保留。`:'请先选择课堂视频；已保存的分析结果会继续保留。';return}
     if(!$('#lessonFile').files[0]&&!$('#goals').value.trim()){showStep(1);$('#uploadStatus').textContent='请先选择本节课教案。';return}
     if(!$('#aiConsent').checked){showStep(1);$('#uploadStatus').textContent='请确认材料分析授权，然后开始。';return}
     if(clipBusy||transcriptBusy||locateBusy||taskGenerating){$('#uploadStatus').textContent='当前处理尚未结束，请稍后继续。';return}
     const file=$('#lessonFile').files[0],key=file?`${file.name}:${file.size}:${file.lastModified}`:'';
     if(file&&key!==loadedPlanKey&&(candidates.length||events.length||recommendedWindows.some(w=>w.status==='analyzed'))&&!confirm('已有AI分析结果。重新读取教案会清空当前候选和片段进度，开始新一轮分析。仅恢复视频回放无需重新选择教案；如需保留结果，请点取消。是否开始新分析？'))return;
-    const workflowStarted=Date.now();let workflowError=null;globalThis.evaluationRunId=crypto.randomUUID();globalThis.evaluationDiagnostics?.record('workflow',{status:'started'});autoBusy=true;autoAbort=new AbortController();$('#videoSlot').appendChild($('#video'));$('#video').classList.remove('hidden');showStep(3);document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',el.dataset.step==='2'));const signal=autoAbort.signal;setAutoControls(true);
+    const workflowStarted=Date.now();let workflowError=null;globalThis.evaluationRunId=(globalThis.evaluationUuid?.()||crypto.randomUUID());globalThis.evaluationDiagnostics?.record('workflow',{status:'started'});autoBusy=true;autoAbort=new AbortController();$('#videoSlot').appendChild($('#video'));$('#video').classList.remove('hidden');showStep(3);document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',el.dataset.step==='2'));const signal=autoAbort.signal;setAutoControls(true);
     const timer=setInterval(()=>{if(autoBusy){const detail=autoStage==='plan'?$('#planResult').textContent:$('#analysisState').textContent;autoMessage(`${autoStage==='connection'?'检查模型连接':autoStage==='plan'?'建立教案参照':autoStage==='screening'?'全课画面初筛':autoStage==='followup'?'按任务缺口补查':analysisInfo.analysis_mode==='quick'?'评分疑点核查':'分段分析全课'}：${detail}`)}},500);
     try{
       autoStage='connection';$('#analysisState').textContent='正在发送最小文字请求检查模型连接，尚未处理教案或视频…';autoMessage($('#analysisState').textContent);
@@ -798,6 +799,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       analysisInfo.workflow_version=strategy==='quick'?'score-questions-v3':'whole-class-v1';
       if(strategy==='quick'){
         autoStage='screening';analysisInfo.screening_windows=buildScreeningWindows(selectedVideoDuration,videoIdentity,analysisInfo.screening_windows||[]);
+        if(!useCompletedScreening&&!$('#videoFile').files[0])throw new Error(selectedVideoName?`浏览器刷新后不会保留已选文件，请重新选择原视频「${selectedVideoName}」再继续分析。`:'请先选择课堂视频再开始分析。');
         const screening=useCompletedScreening?{completed:analysisInfo.screening_windows.filter(w=>w.status==='analyzed').length,total:analysisInfo.screening_windows.length}:await runWindowQueue(analysisInfo.screening_windows,w=>analyzeScreenWindow(w,signal),signal,()=>{updateAutoProgress();saveDraft()});
         if(signal.aborted||screening.completed<screening.total&&!useCompletedScreening)throw new Error('全课初筛尚未完成，已保留进度；可重试未完成区间，或点击“使用已完成初筛，继续精看”。');
         if(!screening.completed)throw new Error('尚无成功初筛结果，请先完成至少一个区间或改用完整检查。');
@@ -808,6 +810,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
         analysisInfo.focus_selection=selection;
         if(recommendedWindows.length>previous)delete analysisInfo.followup_planned;
       }else recommendedWindows=buildCoverageWindows(selectedVideoDuration,videoIdentity,recommendedWindows);renderWindows();updateAutoProgress();saveDraft();
+      if(recommendedWindows.some(w=>w.status!=='analyzed'&&w.status!=='deferred')&&!$('#videoFile').files[0])throw new Error(selectedVideoName?`浏览器刷新后不会保留已选文件，请重新选择原视频「${selectedVideoName}」再继续分析。`:'请先选择课堂视频再开始分析。');
       autoMessage(strategy==='quick'?(analysisInfo.screening_incomplete?'使用已完成的部分初筛继续精看，未完成初筛范围保留缺失提示。':'全课初筛完成，正在核查未解决的评分疑点；活动变化不自动触发精看，初筛不冒充连续证据。'):'已建立全课检查区间，按教案依次检查音画事实。');
       signal.throwIfAborted();const unique=new Map();for(const w of recommendedWindows){const key=`${Number(w.start_seconds).toFixed(2)}:${Number(w.end_seconds).toFixed(2)}`;if(!unique.has(key)||w.status==='analyzed')unique.set(key,w)}recommendedWindows=[...unique.values()];autoStage='clips';document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',el.dataset.step==='2'));
       const analyzeWindow=async w=>{

@@ -332,6 +332,14 @@ async function callMiniMaxMedia(env, content) {
   return text;
 }
 
+function candidateId(){
+  const c=globalThis.crypto;
+  if(typeof c?.randomUUID==='function')return c.randomUUID();
+  const bytes=c.getRandomValues(new Uint8Array(16));
+  bytes[6]=(bytes[6]&0x0f)|0x40;bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 function parseCandidateResult(content, duration) {
   const cleaned = String(content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
   const start = cleaned.indexOf("{"), end = cleaned.lastIndexOf("}");
@@ -343,7 +351,7 @@ function parseCandidateResult(content, duration) {
     const from = Math.max(0, Math.min(Number(duration) || Number.MAX_SAFE_INTEGER, Number(item.start_seconds) || 0));
     const to = Math.max(from, Math.min(Number(duration) || Number.MAX_SAFE_INTEGER, Number(item.end_seconds) || from + 10));
     return {
-      id: `AI${crypto.randomUUID()}`, start_seconds: from, end_seconds: to,
+      id: `AI${candidateId()}`, start_seconds: from, end_seconds: to,
       phase: phases.has(item.phase) ? item.phase : "tool_use", type: types.has(item.type) ? item.type : "engagement",
       student_id: String(item.student_id || "待确认").slice(0, 20), outcome: outcomes.has(item.outcome) ? item.outcome : "neutral",
       assistance: assistance.has(item.assistance) ? item.assistance : "none", confidence: confidence.has(item.confidence) ? item.confidence : "low",

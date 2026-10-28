@@ -1,5 +1,16 @@
 // Shared by both modules. Credentials and upstream URLs stay on the server.
 (() => {
+  // crypto.randomUUID only exists in a secure context (https or localhost).
+  // The site is often opened over plain http on a public IP, so fall back to getRandomValues.
+  const uuid=()=>{
+    const c=(typeof globalThis!=='undefined'?globalThis.crypto:null)||(typeof window!=='undefined'?window.crypto:null);
+    if(typeof c?.randomUUID==='function')return c.randomUUID();
+    const bytes=c.getRandomValues(new Uint8Array(16));
+    bytes[6]=(bytes[6]&0x0f)|0x40;bytes[8]=(bytes[8]&0x3f)|0x80;
+    const hex=[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('');
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  };
+  if(typeof window!=='undefined')window.evaluationUuid=uuid;
   const storageKey='teaching-evaluation-model-v1',select=document.querySelector('#evaluationModel'),hint=document.querySelector('#evaluationModelHint');
   const allowed=['qwen3.8-flash','qwen3.8-max','qwen3.7-plus','MiniMax-M3'];
   let selected='qwen3.8-max',pending=0;
@@ -20,7 +31,7 @@
     const target=new URL(typeof input==='string'?input:input.url,location.href);
     if(target.origin!==location.origin||!target.pathname.startsWith('/api/')||target.pathname.startsWith('/api/diagnostics/'))return window.fetch(input,options);
     const headers=new Headers(options.headers||((typeof input!=='string'&&input.headers)||undefined));headers.set('x-evaluation-model',selected);
-    const diagnosticId=headers.get('x-diagnostic-id')||crypto.randomUUID();headers.set('x-diagnostic-id',diagnosticId);if(globalThis.evaluationRunId)headers.set('x-analysis-run-id',globalThis.evaluationRunId);
+    const diagnosticId=headers.get('x-diagnostic-id')||uuid();headers.set('x-diagnostic-id',diagnosticId);if(globalThis.evaluationRunId)headers.set('x-analysis-run-id',globalThis.evaluationRunId);
     const started=Date.now();
     pending++;window.updateEvaluationModelControl();
     try{

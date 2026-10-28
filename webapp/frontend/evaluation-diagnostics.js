@@ -16,7 +16,7 @@
     finally{sending=false;if(queued.length)timer=setTimeout(flush,500)}
   }
   function add(stage,data={}){
-    const event={diagnostic_id:data.diagnostic_id||crypto.randomUUID(),run_id:globalThis.evaluationRunId||'',stage,client_timestamp:new Date().toISOString(),...Object.fromEntries(fields.filter(k=>Object.hasOwn(data,k)).map(k=>[k,typeof data[k]==='string'?clean(data[k]):data[k]]))};
+    const event={diagnostic_id:data.diagnostic_id||globalThis.evaluationUuid?.()||crypto.randomUUID(),run_id:globalThis.evaluationRunId||'',stage,client_timestamp:new Date().toISOString(),...Object.fromEntries(fields.filter(k=>Object.hasOwn(data,k)).map(k=>[k,typeof data[k]==='string'?clean(data[k]):data[k]]))};
     entries.push(event);entries=entries.slice(-300);queued.push(event);queued=queued.slice(-100);
     try{localStorage.setItem(key,JSON.stringify(entries))}catch{}
     if(event.status==='failed'){const box=document.querySelector('#diagnosticLastError');if(box)box.textContent=`最近失败：${event.message||'详见对应步骤'}；诊断编号：${event.diagnostic_id}`}

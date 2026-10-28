@@ -77,7 +77,7 @@
     try{
       await clearRecordData();
       const remaining=allRecords().filter(item=>item.id!==DEMO_ID);
-      const next=action==='delete'?(remaining[0]||{...fresh(),id:'EVAL-'+crypto.randomUUID()}):{...fresh(),name:record.name||''};
+      const next=action==='delete'?(remaining[0]||{...fresh(),id:'EVAL-'+(globalThis.evaluationUuid?.()||crypto.randomUUID())}):{...fresh(),name:record.name||''};
       const updated=action==='delete'&&remaining.length?remaining:[next,...remaining];
       localStorage.setItem(RECORDS_KEY,JSON.stringify(updated));localStorage.setItem(ACTIVE_KEY,next.id);
       location.replace(`/?record=${encodeURIComponent(next.id)}#overview`);
