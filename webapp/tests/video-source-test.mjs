@@ -83,8 +83,8 @@ const html=await fs.readFile(new URL('../frontend/classroom.html',import.meta.ur
 assert.ok(!html.includes('captureStream(')&&!html.includes('MediaRecorder('),'The primary analysis path must not re-record in the browser');
 const code=html.slice(html.indexOf('  let serverVideoSource=null;'),html.indexOf("  $('#cancelClip').onclick"));
 let currentFile={name:'a.mp4',size:100},calls=0,shouldFail=false;const uploadControls={files:[currentFile]};
-const factory=new Function('$','fetch',`let videoIdentity='a';${code};return {ensure:ensureServerVideoSource,change:()=>{videoIdentity='b'},reset:()=>serverVideoSource=null}`);
-const helper=factory(selector=>selector==='#videoFile'?uploadControls:{textContent:''},async(_url,options)=>{if(options.method==='GET')return Response.json({available_bytes:15*1024**3});calls++;if(shouldFail)throw new Error('network');return Response.json({source_id:'fixture',bytes:100})});
+const factory=new Function('$','fetch','window',`let videoIdentity='a';${code};return {ensure:ensureServerVideoSource,change:()=>{videoIdentity='b'},reset:()=>serverVideoSource=null}`);
+const helper=factory(selector=>selector==='#videoFile'?uploadControls:{textContent:''},async(_url,options)=>{if(options.method==='GET')return Response.json({available_bytes:15*1024**3});calls++;if(shouldFail)throw new Error('network');return Response.json({source_id:'fixture',bytes:100})},{evaluationVideoFingerprint:async()=> 'a'.repeat(64)});
 await helper.ensure(new AbortController().signal,'trace');await helper.ensure(new AbortController().signal,'trace');assert.equal(calls,1);
 helper.change();currentFile={name:'b.mp4',size:200};uploadControls.files=[currentFile];await helper.ensure(new AbortController().signal,'trace');assert.equal(calls,2);
 helper.reset();shouldFail=true;await assert.rejects(helper.ensure(new AbortController().signal,'trace'),/network/);shouldFail=false;await helper.ensure(new AbortController().signal,'trace');assert.equal(calls,4,'Upload failure must not poison the cache');

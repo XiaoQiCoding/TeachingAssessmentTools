@@ -17,18 +17,18 @@ export function normalizeASR(payload, offset, length) {
   }).filter(segment=>segment.text);
 }
 
-export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.env.FFMPEG_PATH||ffmpegStatic, ttl=30*60*1000,log=()=>{},storage=createVideoStorage()}={}) {
+export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.env.FFMPEG_PATH||ffmpegStatic, ttl=30*60*1000,log=()=>{},storage=createVideoStorage(),acquireSource}={}) {
   const jobs=new Map();
   const emit=(job,event)=>{try{log({diagnostic_id:job.diagnostic_id||job.id,job_id:job.id,...event})}catch{}};
   const respond=(response,status,data)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(data));};
-  async function cleanup(job){if(job.dir){const dir=path.resolve(job.dir);if(path.dirname(dir)!==storage.directory||!path.basename(dir).startsWith('transcript-'))throw new Error('临时目录校验失败');await fs.rm(dir,{recursive:true,force:true});job.dir=null;}job.release?.();job.release=null;}
+  async function cleanup(job){try{if(job.dir){const dir=path.resolve(job.dir);if(path.dirname(dir)!==storage.directory||!path.basename(dir).startsWith('transcript-'))throw new Error('临时目录校验失败');await fs.rm(dir,{recursive:true,force:true});job.dir=null;}job.release?.();job.release=null;}finally{job.releaseSource?.();job.releaseSource=null;}}
   async function run(job) {
     const started=Date.now();let stage='audio_extract',stageStarted=started;
     try {
       emit(job,{event:'stage_start',stage,duration_seconds:job.duration});
       job.status='extracting';job.message='正在提取音轨并按7分钟分段。';
       await new Promise((resolve,reject)=>{
-        const child=spawn(ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-i',path.join(job.dir,'source.media'),'-map','0:a:0','-vn','-af','aresample=async=1:first_pts=0','-ar','16000','-ac','1','-c:a','pcm_s16le','-f','segment','-segment_time','420','-reset_timestamps','1',path.join(job.dir,'audio-%04d.wav')],{windowsHide:true});
+        const child=spawn(ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-i',job.sourceFile||path.join(job.dir,'source.media'),'-map','0:a:0','-vn','-af','aresample=async=1:first_pts=0','-ar','16000','-ac','1','-c:a','pcm_s16le','-f','segment','-segment_time','420','-reset_timestamps','1',path.join(job.dir,'audio-%04d.wav')],{windowsHide:true});
         job.child=child;const timeout=setTimeout(()=>{child.kill();reject(new Error('提取音轨超时。'));},10*60*1000);
         child.on('error',()=>{clearTimeout(timeout);reject(new Error('视频处理组件不可用，请配置 FFmpeg 或导入字幕。'));});
         child.on('exit',code=>{clearTimeout(timeout);job.child=null;code===0?resolve():reject(new Error('无法读取音轨，可能视频没有声音或格式不支持；可导入字幕或人工检查。'));});
@@ -66,16 +66,23 @@ export function createTranscriptionService(env, {fetcher=fetch, ffmpeg=process.e
       if(!env.MINIMAX_API_KEY){respond(outgoing,503,{error:'尚未配置 MiniMax 密钥。'});return true;}
       if(Number(incoming.headers['content-length'])>MAX_VIDEO_BYTES){respond(outgoing,413,{error:'视频超过1.5GB，请压缩或导入字幕。'});return true;}
       if([...jobs.values()].filter(job=>!job.finished).length>=2){respond(outgoing,429,{error:'已有视频正在转写，请稍后重试。'});return true;}
-      const duration=Number(incoming.headers['x-video-duration']);
-      if(!Number.isFinite(duration)||duration<=0||duration>14400){respond(outgoing,400,{error:'请提供有效视频时长（不超过4小时）。'});return true;}
-      const job={id:randomUUID(),diagnostic_id:String(incoming.headers['x-diagnostic-id']||''),duration,status:'uploading',message:'正在接收视频。',completed:0,total:0,cancelled:false};jobs.set(job.id,job);
+      let source,duration=Number(incoming.headers['x-video-duration']);
+      if(String(incoming.headers['content-type']).startsWith('application/json')){
+        try{
+          if(!acquireSource)throw Object.assign(new Error('当前服务未提供视频复用，请更新服务。'),{local_status:503});
+          const chunks=[];let length=0;
+          for await(const chunk of incoming){length+=chunk.length;if(length>4096)throw new Error('视频复用请求过大。');chunks.push(chunk);}
+          const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));source=await acquireSource(String(body.video_source_id||''));duration=source.duration_seconds;
+        }catch(error){respond(outgoing,error.local_status||400,{error:error.message});return true;}
+      }
+      if(!Number.isFinite(duration)||duration<=0||duration>14400){source?.release();respond(outgoing,400,{error:'请提供有效视频时长（不超过4小时）。'});return true;}
+      const job={id:randomUUID(),diagnostic_id:String(incoming.headers['x-diagnostic-id']||''),duration,sourceFile:source?.file,releaseSource:source?.release,status:'uploading',message:source?'正在复用视频提取音轨。':'正在接收视频。',completed:0,total:0,cancelled:false};jobs.set(job.id,job);
       try{
         job.dir=path.join(storage.directory,`transcript-${job.id}`);
-        job.release=await storage.reserve(job.dir,Number(incoming.headers['content-length'])||MAX_VIDEO_BYTES);
+        job.release=await storage.reserve(job.dir,source?Math.ceil(duration*32000)+1024*1024:(Number(incoming.headers['content-length'])||MAX_VIDEO_BYTES));
         await fs.mkdir(job.dir,{mode:0o700});
         let size=0;const cap=new Transform({transform(chunk,_encoding,callback){size+=chunk.length;callback(size>MAX_VIDEO_BYTES?Object.assign(new Error('视频超过1.5GB，请压缩或导入字幕。'),{local_status:413}):null,chunk);}});
-        await pipeline(incoming,cap,createWriteStream(path.join(job.dir,'source.media')));
-        if(!size)throw new Error('视频为空。');
+        if(!source){await pipeline(incoming,cap,createWriteStream(path.join(job.dir,'source.media')));if(!size)throw new Error('视频为空。');}
         respond(outgoing,202,{job_id:job.id});void run(job);
       }catch(error){if(['ENOSPC','EDQUOT'].includes(error.code))error=storageProblem();job.status='failed';job.message=error.message;job.finished=Date.now();await cleanup(job);if(!outgoing.destroyed)respond(outgoing,error.local_status||400,{error:job.message});}
       return true;

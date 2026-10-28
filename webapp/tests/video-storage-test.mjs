@@ -65,10 +65,11 @@ try{
 // The browser must stop before posting a video when preflight reports insufficient space.
 const html=await fs.readFile(new URL('../frontend/classroom.html',import.meta.url),'utf8');
 const code=html.slice(html.indexOf('  let serverVideoSource=null;'),html.indexOf("  $('#cancelClip').onclick"));
-let posts=0;
-const ensure=new Function('$','fetch',`let videoIdentity='test';${code};return ensureServerVideoSource`)(
-  selector=>selector==='#videoFile'?{files:[{size:200}]}:{textContent:''},
-  async(_url,options)=>{if(options.method==='POST')posts++;return Response.json({error:'服务器临时视频空间不足，请稍后重试。'},{status:507})}
+let posts=0;const uploadControl={files:[{size:200}]};
+const ensure=new Function('$','fetch','window',`let videoIdentity='test';${code};return ensureServerVideoSource`)(
+  selector=>selector==='#videoFile'?uploadControl:{textContent:''},
+  async(_url,options)=>{if(options.method==='POST')posts++;return Response.json({error:'服务器临时视频空间不足，请稍后重试。'},{status:507})},
+  {evaluationVideoFingerprint:async()=> 'a'.repeat(64)}
 );
 await assert.rejects(ensure(new AbortController().signal,'fixture'),error=>error.fatal&&/空间不足/.test(error.message));
 assert.equal(posts,0);

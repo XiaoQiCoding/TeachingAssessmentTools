@@ -39,7 +39,7 @@ const port = Number(process.env.PORT || 4174);
 const diagnosticSecrets=[process.env.QWEN_API_KEY,process.env.MINIMAX_API_KEY].filter(Boolean);
 const diagnostics=createDiagnostics({directory:process.env.DIAGNOSTICS_DIR||path.resolve(backendDir,'../../outputs/logs'),secrets:diagnosticSecrets});
 const videoSources=createVideoSourceService();
-const transcriptionService=createTranscriptionService(process.env,{log:event=>diagnostics.write(event),storage:videoSources.storage});
+const transcriptionService=createTranscriptionService(process.env,{log:event=>diagnostics.write(event),storage:videoSources.storage,acquireSource:videoSources.acquireSource});
 
 const server = http.createServer(async (incoming, outgoing) => {
   const parsedUrl=new URL(incoming.url||'/',`http://${host}:${port}`);

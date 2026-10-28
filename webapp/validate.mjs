@@ -3,6 +3,7 @@ import fs from "node:fs";
 const html = fs.readFileSync("frontend/index.html", "utf8");
 const classroomHtml = fs.readFileSync("frontend/classroom.html", "utf8");
 new Function(fs.readFileSync('frontend/evaluation-model.js','utf8'));
+new Function(fs.readFileSync('frontend/video-fingerprint.js','utf8'));
 new Function(fs.readFileSync('frontend/evaluation-diagnostics.js','utf8'));
 new Function(fs.readFileSync('frontend/assessment-materials.js','utf8'));
 new Function(fs.readFileSync('frontend/assessment-navigation.js','utf8'));

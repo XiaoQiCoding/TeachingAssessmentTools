@@ -35,7 +35,7 @@ const fakeFetch=async url=>{
  requests++;if(requests===1)return Response.json({error:'video expired',retryable:false},{status:410});
  return Response.json({summary:'Recovered',windows:[],analysis:{timings:{},frame_count:1}});
 };
-const analyze=new Function('$','fetch','videoIdentity','timeLabel',source+screen+';return analyzeScreenWindow')($,fakeFetch,'video',String);
+const analyze=new Function('$','fetch','videoIdentity','timeLabel','window',source+screen+';return analyzeScreenWindow')($,fakeFetch,'video',String,{evaluationVideoFingerprint:async()=> 'a'.repeat(64)});
 const screenJobs=[{id:'screen',status:'pending',video_identity:'video',start_seconds:0,end_seconds:120}];
 await queue(screenJobs,w=>analyze(w,new AbortController().signal),new AbortController().signal,()=>{},noWait);
 assert.equal(uploads,2);assert.equal(requests,2);assert.equal(screenJobs[0].status,'analyzed');

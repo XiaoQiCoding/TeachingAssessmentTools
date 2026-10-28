@@ -2,6 +2,7 @@ const PAGE_HTML = __PAGE_HTML__;
 const CLASSROOM_HTML = __CLASSROOM_HTML__;
 const MODEL_SELECTOR_JS = __MODEL_SELECTOR_JS__;
 const DIAGNOSTICS_JS = __DIAGNOSTICS_JS__;
+const VIDEO_FINGERPRINT_JS = __VIDEO_FINGERPRINT_JS__;
 const MATERIALS_JS = __MATERIALS_JS__;
 const NAVIGATION_JS = __NAVIGATION_JS__;
 const PRE_SKILL = __PRE_SKILL__;
@@ -1361,6 +1362,7 @@ export default {
     const url = new URL(request.url);
     if(request.method==='GET'&&['/assessment-materials.js','/assessment-navigation.js'].includes(url.pathname))return new Response(url.pathname==='/assessment-materials.js'?MATERIALS_JS:NAVIGATION_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
     if(request.method==='GET'&&url.pathname==='/evaluation-model.js')return new Response(MODEL_SELECTOR_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
+    if(request.method==='GET'&&url.pathname==='/video-fingerprint.js')return new Response(VIDEO_FINGERPRINT_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
     if(request.method==='GET'&&url.pathname==='/evaluation-diagnostics.js')return new Response(DIAGNOSTICS_JS,{headers:{'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
     if(url.pathname.startsWith('/api/')){
       try{env=selectEvaluationModel(request,env)}catch(error){return json({error:error.message},400)}

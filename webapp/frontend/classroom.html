@@ -90,6 +90,7 @@
 </div>
 <script src="/evaluation-diagnostics.js"></script>
 <script src="/evaluation-model.js"></script>
+<script src="/video-fingerprint.js"></script>
 <script src="/assessment-materials.js"></script>
 <script>
 const fetch=(...args)=>window.evaluationFetch(...args);
@@ -426,7 +427,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       await waitForVideoMetadata();
       if(!transcriptState?.segments?.length||transcriptState.video_identity!==identity){
         let job=transcriptState?.video_identity===identity?transcriptState.job_id:null;
-        if(!job){await checkVideoUploadCapacity(file,transcriptAbort.signal);$('#transcriptStatus').textContent='正在发送视频供服务器提取音轨，原视频仅作临时处理。';const response=await fetch('/api/classroom/transcription',{method:'POST',headers:{'content-type':'application/octet-stream','x-video-duration':String($('#video').duration)},body:file,signal:transcriptAbort.signal});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'转写接口不可用或视频过大，可导入字幕继续。');job=data.job_id;transcriptState={video_identity:identity,duration:$('#video').duration,job_id:job,segments:[]};saveDraft()}
+        if(!job){$('#transcriptStatus').textContent='正在检查视频是否已上传…';const source=await ensureServerVideoSource(transcriptAbort.signal,globalThis.evaluationUuid?.()||'transcription');$('#transcriptStatus').textContent='正在复用服务器上的视频提取音轨，无需再次上传。';const response=await fetch('/api/classroom/transcription',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({video_source_id:source.source_id}),signal:transcriptAbort.signal});const data=await response.json().catch(()=>({}));if(response.status===410)serverVideoSource=null;if(!response.ok)throw new Error(data.error||'转写接口不可用或视频过大，可导入字幕继续。');job=data.job_id;transcriptState={video_identity:identity,duration:$('#video').duration,job_id:job,segments:[]};saveDraft()}
         const data=await pollTranscript(job,transcriptAbort.signal);if(identity!==videoIdentity)throw new Error('视频已变更，转写结果未采用。');transcriptState={video_identity:identity,duration:data.duration_seconds,segments:data.segments,source:data.source,model:data.model};renderTranscript();saveDraft();
       }
       if(!transcriptState.segments.length)throw new Error('未识别到可用语句，请补充检查画面或导入字幕；不代表学生没有回应。');
@@ -464,21 +465,27 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   $('#reportDimensions').addEventListener('click',e=>{const button=e.target.closest('[data-evidence-id]');if(!button)return;const entry=reportData.dimensions.flatMap(d=>d.evidence).find(x=>x.event_id===button.dataset.evidenceId);if(entry)replayEvidence(entry)});
   let serverVideoSource=null;
   async function checkVideoUploadCapacity(file,signal){
-    const response=await fetch(`/api/classroom/video-source?bytes=${file.size}`,{method:'GET',cache:'no-store',signal:AbortSignal.any([signal,AbortSignal.timeout(20000)])});
+    const identity=videoIdentity;
+    const sha256=await window.evaluationVideoFingerprint(file,signal,progress=>{$('#analysisState').textContent=`正在校验视频内容，检查是否需要上传（${Math.round(progress*100)}%）…`;});
+    const response=await fetch(`/api/classroom/video-source?bytes=${file.size}&sha256=${sha256}`,{method:'GET',cache:'no-store',signal:AbortSignal.any([signal,AbortSignal.timeout(20000)])});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw Object.assign(new Error(data.error||'无法检查服务器视频空间，请稍后重试。'),{http_status:response.status,fatal:[413,507].includes(response.status)});
+    if(file!==$('#videoFile').files[0]||identity!==videoIdentity)throw new Error('视频已变更，请重新开始。');
+    if(data.reusable_source?.source_id){serverVideoSource={...data.reusable_source,file,identity};$('#analysisState').textContent='已找到相同视频，直接复用，无需重复上传。';}
+    return {sha256,source:data.reusable_source};
   }
   async function ensureServerVideoSource(signal,diagnosticId){
     const file=$('#videoFile').files[0],identity=videoIdentity;
     if(!file)throw Object.assign(new Error('请重新选择原视频'),{fatal:false});
     if(serverVideoSource?.file===file&&serverVideoSource.identity===identity)return {...serverVideoSource,upload_ms:0};
     if(file.size>1.5*1024*1024*1024)throw Object.assign(new Error('原视频超过1.5GB，请压缩后重试。'),{fatal:true});
-    await checkVideoUploadCapacity(file,signal);
+    const checked=await checkVideoUploadCapacity(file,signal);
+    if(checked.source)return {...serverVideoSource,upload_ms:0,reused:true};
     const started=Date.now();
     const progress=()=>{$('#analysisState').textContent=`正在上传原视频（${(file.size/1024/1024).toFixed(1)}MB），已耗时 ${Math.round((Date.now()-started)/1000)} 秒；本次会话只上传一次，之后由服务器直接切片。`};
     progress();const timer=setInterval(progress,500);
     try{
-      const response=await fetch('/api/classroom/video-source',{method:'POST',headers:{'content-type':'application/octet-stream','x-diagnostic-id':diagnosticId},body:file,signal:AbortSignal.any([signal,AbortSignal.timeout(1800000)])}),data=await response.json().catch(()=>({}));
+      const response=await fetch('/api/classroom/video-source',{method:'POST',headers:{'content-type':'application/octet-stream','x-diagnostic-id':diagnosticId,'x-video-sha256':checked.sha256},body:file,signal:AbortSignal.any([signal,AbortSignal.timeout(1800000)])}),data=await response.json().catch(()=>({}));
       if(!response.ok)throw Object.assign(new Error(data.error||(response.status===404?'服务器尚未提供视频切片接口，请更新并重启服务。':`原视频上传失败（HTTP ${response.status}）`)),{failure_detail:data.failure_detail,http_status:response.status,retryable:data.retryable===true||[408,429,500,502,503,504].includes(response.status),fatal:[401,403,404,413,422,507].includes(response.status)});
       if(!data.source_id)throw Object.assign(new Error('服务器未返回有效视频编号，请稍后重试。'),{retryable:true});
       if(identity!==videoIdentity||file!==$('#videoFile').files[0])throw new Error('上传期间视频已变更，请重新开始');

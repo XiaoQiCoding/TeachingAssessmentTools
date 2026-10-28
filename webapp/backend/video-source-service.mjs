@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import ffmpeg from 'ffmpeg-static';
@@ -14,6 +14,32 @@ const problem=(message,status=400,code='INVALID_VIDEO_SOURCE')=>Object.assign(ne
 export function createVideoSourceService({directory=path.join(os.tmpdir(),'teaching-video-sources'),maxBytes=MAX_VIDEO_BYTES,maxStoredBytes=MAX_STORED_VIDEO_BYTES,ttlMs=6*60*60*1000,now=Date.now,storage=createVideoStorage({directory,maxStoredBytes})}={}){
   const root=path.resolve(directory),sources=new Map();let uploading=false,slicing=0;
   const sourceDir=id=>{if(!validId.test(id))throw problem('视频编号无效');return path.join(root,id)};
+  const publicSource=(id,entry)=>({source_id:id,bytes:entry.bytes,sha256:entry.sha256,duration_seconds:entry.duration_seconds,has_audio:entry.has_audio,expires_after_seconds:ttlMs/1000});
+  async function findDuplicate(sha256,bytes){
+    for(const item of await fs.readdir(root,{withFileTypes:true})){
+      if(!item.isDirectory()||!validId.test(item.name)||storage.isReserved(sourceDir(item.name)))continue;
+      const id=item.name,dir=sourceDir(id);
+      try{
+        const meta=JSON.parse(await fs.readFile(path.join(dir,'source.json'),'utf8'));
+        if(meta.sha256!==sha256||meta.bytes!==bytes||!Number.isFinite(meta.duration_seconds)||meta.duration_seconds<=0||typeof meta.has_audio!=='boolean')continue;
+        const stat=await fs.stat(path.join(dir,'source.media')),dirStat=await fs.stat(dir);
+        if(stat.size!==bytes||now()-(sources.get(id)?.touched??dirStat.mtimeMs)>ttlMs)continue;
+        const entry=sources.get(id)||{file:path.join(dir,'source.media'),bytes,sha256,duration_seconds:meta.duration_seconds,has_audio:meta.has_audio,busy:0};
+        entry.touched=now();sources.set(id,entry);await fs.utimes(dir,new Date(now()),new Date(now()));
+        return publicSource(id,entry);
+      }catch(error){if(!['ENOENT'].includes(error.code)&&!(error instanceof SyntaxError))throw error;}
+    }
+    return null;
+  }
+  async function acquireSource(id){
+    const dir=sourceDir(id),entry=sources.get(id);
+    if(!entry||now()-entry.touched>ttlMs)throw problem('临时视频已过期，请重新连接原视频。',410,'VIDEO_SOURCE_EXPIRED');
+    entry.busy++;entry.touched=now();
+    try{await fs.stat(entry.file);await fs.utimes(dir,new Date(now()),new Date(now()));}
+    catch(error){entry.busy--;throw problem('临时视频已失效，请重新上传。',410,'VIDEO_SOURCE_EXPIRED');}
+    let released=false;
+    return {...publicSource(id,entry),file:entry.file,release:()=>{if(!released){released=true;entry.busy--;entry.touched=now();void fs.utimes(dir,new Date(now()),new Date(now())).catch(()=>{});}}};
+  }
   async function remove(id){
     const target=sourceDir(id);
     if(path.dirname(path.resolve(target))!==root)throw new Error('Unsafe video cleanup path');
@@ -48,9 +74,12 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
     if(url.pathname!=='/api/classroom/video-source')return false;
     const send=(status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify({diagnostic_id,...data}))};
     if(req.method==='GET'){
-      try{await cleanup();const capacity=await storage.capacity();const bytes=Number(url.searchParams.get('bytes')||0);
+      try{await cleanup();const bytes=Number(url.searchParams.get('bytes')||0),sha256=url.searchParams.get('sha256');
         if(!Number.isSafeInteger(bytes)||bytes<0){send(400,{error:'视频大小无效。'});return true}
         if(bytes>maxBytes){send(413,{error:'原视频超过1.5GB，请压缩后重试。',max_bytes:maxBytes});return true}
+        if(sha256&&!/^[a-f0-9]{64}$/.test(sha256)){send(400,{error:'视频内容指纹无效。'});return true}
+        if(sha256){const source=await findDuplicate(sha256,bytes);if(source){send(200,{reusable_source:source,max_bytes:maxBytes});return true}}
+        const capacity=await storage.capacity();
         if(bytes>capacity.available_bytes){send(507,{error:storageProblem().message,...capacity,max_bytes:maxBytes});return true}
         send(200,{...capacity,max_bytes:maxBytes});
       }catch{send(503,{error:'暂时无法检查服务器视频空间，请稍后重试。'})}return true;
@@ -58,18 +87,25 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
     if(req.method!=='POST'){send(405,{error:'请上传原视频'});return true}
     if(uploading){send(429,{error:'另一个原视频正在上传，请稍后重试。',retryable:true});return true}
     if(Number(req.headers['content-length'])>maxBytes){send(413,{error:'原视频超过1.5GB，请压缩后重试。'});return true}
+    const expectedHash=req.headers['x-video-sha256'];
+    if(expectedHash&&!/^[a-f0-9]{64}$/.test(expectedHash)){send(400,{error:'视频内容指纹无效。'});return true}
     uploading=true;let id=null,bytes=0,release;const started=now();
     try{
       await cleanup();
       const allowance=Number(req.headers['content-length'])||maxBytes;
+      if(expectedHash){const duplicate=await findDuplicate(expectedHash,allowance);if(duplicate){send(200,{...duplicate,reused:true});return true}}
       id=randomUUID();const dir=sourceDir(id);release=await storage.reserve(dir,allowance);await fs.mkdir(dir,{mode:0o700});
       const file=path.join(dir,'source.media'),handle=await fs.open(file,'wx',0o600);
-      try{for await(const chunk of req){bytes+=chunk.length;if(bytes>allowance)throw problem('视频超过上传或临时存储限制。',413);await handle.writeFile(chunk)}}finally{await handle.close()}
+      const hash=createHash('sha256');
+      try{for await(const chunk of req){bytes+=chunk.length;if(bytes>allowance)throw problem('视频超过上传或临时存储限制。',413);hash.update(chunk);await handle.writeFile(chunk)}}finally{await handle.close()}
       if(!bytes)throw problem('没有收到视频内容');
-      const metadata=await probe(file),entry={file,bytes,...metadata,touched:now(),busy:0};sources.set(id,entry);
+      const sha256=hash.digest('hex');
+      if(expectedHash&&sha256!==expectedHash)throw problem('视频内容校验失败，请重新选择原视频后重试。',422,'VIDEO_HASH_MISMATCH');
+      const metadata=await probe(file),entry={file,bytes,sha256,...metadata,touched:now(),busy:0};
+      await fs.writeFile(path.join(dir,'source.json'),JSON.stringify({bytes,sha256,...metadata}),{flag:'wx',mode:0o600});sources.set(id,entry);
       await fs.utimes(dir,new Date(now()),new Date(now()));
       void log({event:'stage_complete',stage:'source_upload',elapsed_ms:now()-started,bytes,duration_seconds:metadata.duration_seconds,source_id:id});
-      send(201,{source_id:id,bytes,...metadata,expires_after_seconds:ttlMs/1000});
+      send(201,publicSource(id,entry));
     }catch(error){
       if(id)await remove(id).catch(()=>{});
       if(['ENOSPC','EDQUOT'].includes(error.code))error=storageProblem();
@@ -128,5 +164,5 @@ export function createVideoSourceService({directory=path.join(os.tmpdir(),'teach
       entry.busy--;entry.touched=now();slicing--;
     }
   }
-  return {handle,prepareClip,prepareScreen,cleanup,storage,close:()=>clearInterval(timer)};
+  return {handle,prepareClip,prepareScreen,cleanup,storage,acquireSource,close:()=>clearInterval(timer)};
 }
