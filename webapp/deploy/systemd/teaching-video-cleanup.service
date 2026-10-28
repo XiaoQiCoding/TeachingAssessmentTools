@@ -1,0 +1,14 @@
+[Unit]
+Description=Remove expired temporary classroom video sources
+Documentation=file:///opt/teaching-assessment/webapp/tools/cleanup-video-sources.mjs
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/teaching-assessment/webapp
+ExecStart=/home/ubuntu/.nvm/versions/node/v22.23.2/bin/node tools/cleanup-video-sources.mjs
+SuccessExitStatus=0
+TimeoutStartSec=120
+Nice=10
+IOSchedulingClass=idle

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the temporary classroom video cleanup every 30 minutes
+Documentation=file:///opt/teaching-assessment/webapp/tools/cleanup-video-sources.mjs
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+Persistent=true
+Unit=teaching-video-cleanup.service
+
+[Install]
+WantedBy=timers.target
