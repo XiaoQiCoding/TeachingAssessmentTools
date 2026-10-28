@@ -15,8 +15,8 @@ for(const duration of [1,12,55,60,61,115,1792]){
 }
 assert.throws(()=>build(Infinity,'v'));assert.throws(()=>build(0,'v'));
 const windows=build(130,'video'),calls=[];
-await queue(windows,async w=>{calls.push(w.id);throw Object.assign(new Error('overload'),{retryable:true})},new AbortController().signal,()=>{});
-assert.equal(calls.length,1,'Overload pauses instead of flooding all remaining windows');
+await queue(windows,async w=>{calls.push(w.id);throw Object.assign(new Error('overload'),{retryable:true})},new AbortController().signal,()=>{},{wait:async()=>{}});
+assert.equal(calls.length,3,'Persistent overload stops only after bounded automatic recovery, without flooding remaining windows');
 assert.equal(windows[1].status,'pending');assert.equal(coverage(windows),0);
 await queue(windows,async()=>{},new AbortController().signal,()=>{});assert.equal(coverage(windows),130);
 const unknown={video_identity:'video',start_seconds:52,end_seconds:64,completion_quality:'unknown',task:'分类',limitations:'任务过程不完整'};

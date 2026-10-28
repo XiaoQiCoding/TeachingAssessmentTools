@@ -466,15 +466,16 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   let serverVideoSource=null;
   async function ensureServerVideoSource(signal,diagnosticId){
     const file=$('#videoFile').files[0],identity=videoIdentity;
-    if(!file)throw new Error('请重新选择原视频');
+    if(!file)throw Object.assign(new Error('请重新选择原视频'),{fatal:true});
     if(serverVideoSource?.file===file&&serverVideoSource.identity===identity)return {...serverVideoSource,upload_ms:0};
-    if(file.size>512*1024*1024)throw new Error('原视频超过512MB，请压缩后重试。');
+    if(file.size>512*1024*1024)throw Object.assign(new Error('原视频超过512MB，请压缩后重试。'),{fatal:true});
     const started=Date.now();
     const progress=()=>{$('#analysisState').textContent=`正在上传原视频（${(file.size/1024/1024).toFixed(1)}MB），已耗时 ${Math.round((Date.now()-started)/1000)} 秒；本次会话只上传一次，之后由服务器直接切片。`};
     progress();const timer=setInterval(progress,500);
     try{
       const response=await fetch('/api/classroom/video-source',{method:'POST',headers:{'content-type':'application/octet-stream','x-diagnostic-id':diagnosticId},body:file,signal:AbortSignal.any([signal,AbortSignal.timeout(1800000)])}),data=await response.json().catch(()=>({}));
-      if(!response.ok)throw Object.assign(new Error(data.error||(response.status===404?'服务器尚未提供视频切片接口，请更新并重启服务。':`原视频上传失败（HTTP ${response.status}）`)),{failure_detail:data.failure_detail});
+      if(!response.ok)throw Object.assign(new Error(data.error||(response.status===404?'服务器尚未提供视频切片接口，请更新并重启服务。':`原视频上传失败（HTTP ${response.status}）`)),{failure_detail:data.failure_detail,http_status:response.status,retryable:data.retryable===true||[408,429,500,502,503,504].includes(response.status),fatal:[401,403,404,413,422,507].includes(response.status)});
+      if(!data.source_id)throw Object.assign(new Error('服务器未返回有效视频编号，请稍后重试。'),{retryable:true});
       if(identity!==videoIdentity||file!==$('#videoFile').files[0])throw new Error('上传期间视频已变更，请重新开始');
       serverVideoSource={...data,file,identity};return {...serverVideoSource,upload_ms:Date.now()-started};
     }finally{clearInterval(timer)}
@@ -492,9 +493,9 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       globalThis.evaluationDiagnostics?.record('source_upload',{diagnostic_id:diagnosticId,status:'complete',elapsed_ms:uploadMs,bytes:source.bytes});
       const form=new FormData();form.append('mode','video');form.append('video_fps',String(analysisInfo.detail_fps||2));form.append('video_source_id',source.source_id);form.append('audio_present',String(source.has_audio));form.append('duration',String(end-start));form.append('clip_offset',String(start));if(selectedWindowId&&windowSource){form.append('window_id',windowSource.id);form.append('locating_basis',windowSource.reason);form.append('transcript_context',JSON.stringify(windowSource.transcript));}form.append('lesson',$('#lessonName').value);form.append('goals',$('#goals').value);form.append('instructions',$('#instructions').value);form.append('observation_plan',$('#observationPlan').value);
       requestStarted=Date.now();const progress=()=>{$('#analysisState').textContent=`服务器正在切片并提交 AI：${timeLabel(start)}—${timeLabel(end)}，本次请求已耗时 ${Math.round((Date.now()-requestStarted)/1000)} 秒。无需播放视频，完成后显示切片与 AI 分项耗时。`};progress();progressTimer=setInterval(progress,500);
-      const response=await fetch('/api/classroom/video-candidates',{method:'POST',headers:{'x-diagnostic-id':diagnosticId},body:form,signal:AbortSignal.any([signal,AbortSignal.timeout(310000)])}),data=await response.json();requestMs=Date.now()-requestStarted;clearInterval(progressTimer);responseData=data;failureDetail=data.failure_detail||null;if(!response.ok){if(response.status===410)serverVideoSource=null;throw Object.assign(new Error(data.error||'片段分析失败'),{retryable:data.retryable===true,upstream_status:data.upstream_status})}
+      const response=await fetch('/api/classroom/video-candidates',{method:'POST',headers:{'x-diagnostic-id':diagnosticId},body:form,signal:AbortSignal.any([signal,AbortSignal.timeout(310000)])}),data=await response.json().catch(()=>{throw Object.assign(new Error('服务未返回有效分析结果，正在自动恢复。'),{retryable:true,http_status:response.status,fatal:[401,403].includes(response.status)})});requestMs=Date.now()-requestStarted;clearInterval(progressTimer);responseData=data;failureDetail=data.failure_detail||null;if(!response.ok){if(response.status===410)serverVideoSource=null;throw Object.assign(new Error(data.error||'片段分析失败'),{retryable:data.retryable===true||[408,410,429,500,502,503,504].includes(response.status),http_status:response.status,upstream_status:data.upstream_status||response.status,retry_delay_ms:response.status===410?0:undefined,fatal:[401,403].includes(response.status)})}
       if(requestIdentity!==videoIdentity)throw new Error('分析期间视频已变更，请重新分析当前视频');candidates=mergeCandidateEvidence(candidates,(data.candidates||[]).map(c=>({...c,video_identity:videoIdentity})),events.map(e=>e.id));analysisInfo={...analysisInfo,used:true,mode:'continuous_clip',model:data.analysis?.model||'MiniMax-M3',candidate_count:candidates.length,models:[...new Set(candidates.map(c=>c.analysis_model).filter(Boolean))]};$('#analysisState').textContent=data.summary+' 片段结果仍是候选，请回看并确认，无法观察的部分不要评分。';if(windowSource){windowSource.analysis_model=data.analysis?.model;windowSource.status='analyzed';windowSource.summary=String(data.summary||'未返回活动摘要，需回放核实');renderWindows()}reportData=null;renderCandidates();saveDraft();
-    }catch(error){failureDetail??=error.failure_detail||null;attemptError=error.name==='AbortError'?'已停止当前分析，已完成的结果会保留。':error.message;if(phase==='source_upload'||error.name==='TimeoutError'||error.name==='TypeError')error.retryable=true;$('#analysisState').textContent=attemptError;if(windowSource){windowSource.status='failed';windowSource.error=attemptError;saveDraft()}if(autoBusy)throw error}finally{
+    }catch(error){failureDetail??=error.failure_detail||null;attemptError=error.name==='AbortError'?'已停止当前分析，已完成的结果会保留。':error.message;if(!error.fatal&&((phase==='source_upload'&&error.http_status==null)||error.name==='TimeoutError'||error.name==='TypeError'))error.retryable=true;$('#analysisState').textContent=attemptError;if(windowSource){windowSource.status='failed';windowSource.error=attemptError;saveDraft()}if(autoBusy)throw error}finally{
       clearInterval(progressTimer);stopClip=null;const upload_ms=uploadMs??(requestStarted?0:Date.now()-attemptStarted),capture_ms=0,request_ms=requestStarted?(requestMs??Date.now()-requestStarted):0,server=responseData?.analysis?.timings||responseData?.timings||{};
       if(windowSource){
         const attempt={usage:responseData?.analysis?.usage||responseData?.usage||null,diagnostic_id:responseData?.diagnostic_id||diagnosticId,status:windowSource.status,processing_mode:'server_slice',upload_ms,capture_ms,request_ms,slice_ms:server.slice_ms??null,normalization_ms:server.normalization_ms??null,model_ms:server.model_ms??null,validation_ms:server.validation_ms??null};
@@ -572,11 +573,11 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       const source=await ensureServerVideoSource(signal,diagnosticId);uploadMs=source.upload_ms;signal.throwIfAborted();
       const form=new FormData();for(const [key,value]of Object.entries({analysis_stage:'screening',video_source_id:source.source_id,clip_offset:w.start_seconds,duration:w.end_seconds-w.start_seconds,observation_plan:$('#observationPlan').value,window_id:w.id}))form.append(key,String(value));
       requestStart=Date.now();$('#analysisState').textContent='正在初筛 '+timeLabel(w.start_seconds)+'—'+timeLabel(w.end_seconds)+'，只定位线索，不生成评分证据。';
-      const response=await fetch('/api/classroom/video-candidates',{method:'POST',headers:{'x-diagnostic-id':diagnosticId},body:form,signal:AbortSignal.any([signal,AbortSignal.timeout(310000)])});data=await response.json();
-      if(!response.ok){if(response.status===410)serverVideoSource=null;throw Object.assign(new Error(data.error||'初筛失败'),{retryable:data.retryable===true})}
+      const response=await fetch('/api/classroom/video-candidates',{method:'POST',headers:{'x-diagnostic-id':diagnosticId},body:form,signal:AbortSignal.any([signal,AbortSignal.timeout(310000)])});data=await response.json().catch(()=>{throw Object.assign(new Error('服务未返回有效分析结果，正在自动恢复。'),{retryable:true,http_status:response.status,fatal:[401,403].includes(response.status)})});
+      if(!response.ok){if(response.status===410)serverVideoSource=null;throw Object.assign(new Error(data.error||'初筛失败'),{retryable:data.retryable===true||[408,410,429,500,502,503,504].includes(response.status),http_status:response.status,retry_delay_ms:response.status===410?0:undefined,fatal:[401,403].includes(response.status)})}
       signal.throwIfAborted();if(w.video_identity!==videoIdentity)throw new Error('视频已变更');
       w.windows=data.windows||[];w.summary=data.summary;w.analysis_model=data.analysis?.model;w.frame_count=data.analysis?.frame_count;delete w.failure_detail;
-    }catch(error){w.error=error.message;w.failure_detail=data?.failure_detail||{diagnostic_id:diagnosticId,stage:requestStart?'request':'source_upload',message:error.message};if(!requestStart||error.name==='TimeoutError'||error.name==='TypeError')error.retryable=true;throw error}
+    }catch(error){w.error=error.message;w.failure_detail=data?.failure_detail||{diagnostic_id:diagnosticId,stage:requestStart?'request':'source_upload',message:error.message};if(!error.fatal&&((!requestStart&&error.http_status==null)||error.name==='TimeoutError'||error.name==='TypeError'))error.retryable=true;throw error}
     finally{
       const t=w.timing_totals||={attempts:0,upload_ms:0,request_ms:0,slice_ms:0,model_ms:0},server=data?.analysis?.timings||data?.timings||{};t.attempts++;t.upload_ms+=uploadMs;t.request_ms+=requestStart?Date.now()-requestStart:0;t.slice_ms+=Number(server.slice_ms)||0;t.model_ms+=Number(server.model_ms)||0;
       const u=data?.analysis?.usage||data?.usage;if(u?.measured_calls){w.token_totals||={input_tokens:0,output_tokens:0,measured_calls:0};for(const k of ['input_tokens','output_tokens','measured_calls'])w.token_totals[k]+=Number(u[k])||0;}
@@ -638,14 +639,41 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     }
     return result;
   }
-  // Run one resumable job per selected window. Provider overload pauses the queue.
-  async function runWindowQueue(windows,analyze,signal,onProgress){
+  // Recover transient failures automatically; persistent outages stop after bounded retries.
+  async function runWindowQueue(windows,analyze,signal,onProgress,options={}){
+    const limit=Math.max(1,Math.min(5,options.maxAttempts||3));
+    const wait=options.wait||((ms,signal)=>new Promise((resolve,reject)=>{
+      if(signal.aborted){reject(signal.reason);return}
+      const abort=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);reject(signal.reason)};
+      const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve()},ms);
+      signal.addEventListener('abort',abort,{once:true});
+    }));
+    let blocked=false;
     for(const w of windows){
-      if(signal.aborted)break;
+      if(signal.aborted||blocked)break;
       if(w.status==='analyzed'||w.status==='deferred')continue;
-      w.status='analyzing';delete w.error;onProgress(windows,w);
-      try{const used=await analyze(w);if(signal.aborted){w.status='pending';break}w.status=used===false?'deferred':'analyzed'}
-      catch(error){w.status=signal.aborted?'pending':'failed';w.error=error.message;if(error.retryable){onProgress(windows,w);break}}
+      for(let attempt=1;attempt<=limit;attempt++){
+        if(signal.aborted){w.status='pending';break}
+        w.status='analyzing';delete w.error;onProgress(windows,w);
+        try{
+          const used=await analyze(w);
+          if(signal.aborted){w.status='pending';break}
+          w.status=used===false?'deferred':'analyzed';delete w.auto_retry;break;
+        }catch(error){
+          if(signal.aborted){w.status='pending';delete w.auto_retry;break}
+          w.error=error.message;
+          if(error.retryable&&!error.fatal&&attempt<limit){
+            const delay=error.retry_delay_ms===0?0:attempt===1?2000:8000;
+            w.status='retry_wait';w.auto_retry={attempt:attempt+1,max_attempts:limit,delay_ms:delay,message:error.message};
+            onProgress(windows,w);
+            try{await wait(delay,signal)}catch(waitError){if(!signal.aborted)throw waitError;w.status='pending';delete w.auto_retry;break}
+            continue;
+          }
+          w.status='failed';w.auto_retry={attempt,max_attempts:limit,exhausted:Boolean(error.retryable),message:error.message};
+          // Avoid flooding the provider when its service remains unavailable. Per-clip permanent failures do not block other clips.
+          blocked=Boolean(error.retryable||error.fatal);break;
+        }
+      }
       onProgress(windows,w);
     }
     return {completed:windows.filter(w=>w.status==='analyzed'||w.status==='deferred').length,failed:windows.filter(w=>w.status==='failed').length,total:windows.length};
@@ -656,6 +684,8 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   }
   function updateAutoProgress(){
     const screens=(analysisInfo.screening_windows||[]).filter(w=>w.video_identity===videoIdentity);const allWindows=[...screens,...recommendedWindows,...(analysisInfo.focus_selection?.retired||[]).filter(w=>w.video_identity===videoIdentity)];
+    const recovering=allWindows.find(w=>w.status==='retry_wait');
+    if(recovering)$('#analysisState').textContent=`临时故障正在自动恢复：${recovering.auto_retry?.message||recovering.error}；${recovering.auto_retry?.delay_ms?'稍后':'立即'}自动重试第${recovering.auto_retry?.attempt} / ${recovering.auto_retry?.max_attempts}次。视频编号失效时自动重新上传；已完成结果保留，可随时暂停。`;
     const done=recommendedWindows.filter(w=>w.status==='analyzed').length,failed=recommendedWindows.filter(w=>w.status==='failed').length;
     analysisInfo.coverage={screened_seconds:coverageSeconds(screens),reviewed_seconds:coverageSeconds(events.filter(e=>e.confirmed&&e.reviewed_clip&&e.video_identity===videoIdentity).map(e=>({...e,status:'analyzed'}))),checked_seconds:coverageSeconds(recommendedWindows),video_seconds:selectedVideoDuration,completed_windows:done,total_windows:recommendedWindows.length,failed_windows:failed};
     const screeningActive=autoStage==='screening'||(!recommendedWindows.length&&screens.length);
@@ -668,7 +698,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     $('#focusSelectionSummary').textContent=selection?`选段规则：同一任务与观察类别选择代表片段，变化与异常优先，并保留首中尾抽查。初筛推荐 ${selection.recommended} 段，重复线索 ${deferred.length} 段未精看；完整结果保留，缺证指标仍待评。`:'';
     $('#deferredFocusDetails').hidden=!deferred.length;
     $('#deferredFocusList').innerHTML=deferred.map(w=>`<p>${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}：${escapeHtml(w.reason)}；${escapeHtml(w.deferred_reason)}</p>`).join('');
-    $('#activityTimeline').innerHTML=allWindows.sort((a,b)=>a.start_seconds-b.start_seconds||a.end_seconds-b.end_seconds).map(w=>`<div style="margin-bottom:12px"><strong>${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}</strong> · ${w.source==='screening'?'初筛（不作评分证据）':w.source==='evidence_followup'?'补查':w.source==='focused'?'重点精看':'课堂区间'} · ${w.status==='analyzed'?'已分析':w.status==='failed'?'待重试':w.status==='deferred'?'未精看（重复证据）':'待分析'}<p>${escapeHtml((w.status==='failed'?w.error:w.status==='deferred'?w.deferred_reason:w.summary)||'尚无活动摘要')}</p>${windowDiagnosticHtml(w)}</div>`).join('');
+    $('#activityTimeline').innerHTML=allWindows.sort((a,b)=>a.start_seconds-b.start_seconds||a.end_seconds-b.end_seconds).map(w=>`<div style="margin-bottom:12px"><strong>${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}</strong> · ${w.source==='screening'?'初筛（不作评分证据）':w.source==='evidence_followup'?'补查':w.source==='focused'?'重点精看':'课堂区间'} · ${w.status==='analyzed'?'已分析':w.status==='failed'?'待重试':w.status==='retry_wait'?'等待自动重试':w.status==='deferred'?'未精看（重复证据）':'待分析'}<p>${escapeHtml((w.status==='failed'?w.error:w.status==='deferred'?w.deferred_reason:w.summary)||'尚无活动摘要')}</p>${windowDiagnosticHtml(w)}</div>`).join('');
     const measured=allWindows.map(w=>w.timing_totals).filter(Boolean),sum=key=>measured.reduce((n,t)=>n+(Number(t[key])||0),0);
     $('#timingSummary').textContent=measured.length?`已记录 ${sum('attempts')} 次片段处理（含重试）：原视频上传 ${diagnosticDuration(sum('upload_ms'))}；旧流程本机准备 ${diagnosticDuration(sum('capture_ms'))}；片段请求与后台处理合计 ${diagnosticDuration(sum('request_ms'))}，其中服务器切片 ${diagnosticDuration(sum('slice_ms'))}、模型接口往返 ${diagnosticDuration(sum('model_ms'))}、旧流程转码 ${diagnosticDuration(sum('normalization_ms'))}。历史未计时的尝试不在此统计内。`:recommendedWindows.some(w=>['analyzed','failed'].includes(w.status))?'历史片段未记录分项耗时，无法还原过去的占比；后续尝试将单独计时。':'尚无已完成的分项计时；当前准备进度显示在上方，完成或失败后会保存各阶段耗时。';
     const usage=allWindows.map(w=>w.token_totals).filter(u=>u?.measured_calls),input=usage.reduce((n,u)=>n+u.input_tokens,0),output=usage.reduce((n,u)=>n+u.output_tokens,0);
@@ -746,7 +776,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       }
       updateAutoProgress();
       $('#autoTitle').textContent=signal.aborted?'分析已暂停':result.completed<result.total?'部分片段待继续':analysisInfo.screening_incomplete?'部分范围已分析，请核对片段':'分析完成，请核对片段';
-      autoMessage(signal.aborted?'已暂停，完成的片段已保留。点击继续分析即可接着处理。':`${recommendedWindows.filter(w=>w.status==='analyzed').length} 个片段精看完成，${recommendedWindows.filter(w=>w.status==='deferred').length} 个重复片段未精看，发现 ${candidates.filter(c=>!c.ignored).length} 条待核对记录。${result.completed<result.total?'部分片段失败或未完成；已保留进度，请展开时间轴查看具体原因。':(analysisInfo.screening_incomplete?'部分初筛未完成；本次仅覆盖已精看的范围。':'')+'请按下方指标检查证据；没有发现迁移等表现时保留待评，不自动补成达标。'}`);
+      autoMessage(signal.aborted?'已暂停，完成的片段已保留。点击继续分析即可接着处理。':`${recommendedWindows.filter(w=>w.status==='analyzed').length} 个片段精看完成，${recommendedWindows.filter(w=>w.status==='deferred').length} 个重复片段未精看，发现 ${candidates.filter(c=>!c.ignored).length} 条待核对记录。${result.completed<result.total?'部分片段在自动恢复后仍未完成；已保留进度，请展开时间轴查看具体原因。':(analysisInfo.screening_incomplete?'部分初筛未完成；本次仅覆盖已精看的范围。':'')+'请按下方指标检查证据；没有发现迁移等表现时保留待评，不自动补成达标。'}`);
     }catch(error){workflowError=error.message;$('#autoTitle').textContent=signal.aborted?'分析已暂停':'分析暂未完成';autoMessage(signal.aborted?'已暂停，已有内容已保留。点击继续分析。':`${error.message}${/已保存|已保留/.test(error.message)?'':' 已完成的内容已保留，可继续分析。'}`)}
     finally{globalThis.evaluationDiagnostics?.record('workflow',{status:signal.aborted?'cancelled':workflowError?'failed':(recommendedWindows.some(w=>!['analyzed','deferred'].includes(w.status))||(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed'))?'partial':'complete',elapsed_ms:Date.now()-workflowStarted,message:workflowError||''});clearInterval(timer);autoBusy=false;autoAbort=null;document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',Number(el.dataset.step)===currentStep));setAutoControls(false);updateAutoProgress();saveDraft()}
   }

@@ -15,7 +15,7 @@ for(const duration of [1,12,120,121,1792.89]){
 }
 const screens=screen(240,'v');screens[0].status='analyzed';screens[0].windows=[{start_seconds:10,end_seconds:40,reason:'辅助',priority:'concern'}];screens[1].windows=[{start_seconds:130,end_seconds:160,reason:'未完成初筛，不可采用'}];
 const focused=focus(240,'v',screens);assert.ok(focused.some(w=>w.reason==='辅助'));assert.ok(!focused.some(w=>w.reason==='未完成初筛，不可采用'));assert.ok(focused.some(w=>w.id==='SAMPLE-1'));
-const calls=[];await queue(screens,async w=>{calls.push(w.id);throw Object.assign(new Error('overload'),{retryable:true})},new AbortController().signal,()=>{});assert.deepEqual(calls,['SCREEN-120']);
+const calls=[];await queue(screens,async w=>{calls.push(w.id);throw Object.assign(new Error('overload'),{retryable:true})},new AbortController().signal,()=>{},{wait:async()=>{}});assert.deepEqual(calls,['SCREEN-120','SCREEN-120','SCREEN-120']);
 
 const original=globalThis.fetch;let modelCalls=0,body,answer={summary:'学生操作，身份不清，需连续检查',windows:[{start_seconds:5,end_seconds:35,reason:'教师辅助学生操作',priority:'concern'}]};
 const env={QWEN_API_KEY:'fixture',PREPARE_VIDEO_SCREEN:async()=>[{time_seconds:0,blob:new Blob(['jpeg'],{type:'image/jpeg'})}]};
@@ -42,19 +42,19 @@ try{
 const start=html.slice(html.indexOf('  async function startAssessment(options={}){'),html.indexOf("  $('#startAssessment').onclick"));
 const controls=new Map(),$=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',checked:true,classList:{add(){},remove(){},toggle(){}},appendChild(){}});return controls.get(key)};
 $('#videoFile').files=[{}];$('#goals').value='分类';$('#video').duration=245;$('#analysisStrategy').value='quick';$('#detailFps').value='2';
-const factory=new Function('$','document','fetch',helpers+coverage+`
- let autoBusy=false,autoAbort=null,clipBusy=false,transcriptBusy=false,locateBusy=false,taskGenerating=false,loadedPlanKey='',autoStage='',videoIdentity='video',selectedVideoDuration=0,selectedWindowId=null,reportData=null,recommendedWindows=[],candidates=[],events=[],analysisInfo={},screenCalls=0,clipCalls=0,failOnce=true;
+const factory=new Function('$','document','fetch',helpers+coverage.replace('options={})','options={wait:async()=>{}})')+`
+ let autoBusy=false,autoAbort=null,clipBusy=false,transcriptBusy=false,locateBusy=false,taskGenerating=false,loadedPlanKey='',autoStage='',videoIdentity='video',selectedVideoDuration=0,selectedWindowId=null,reportData=null,recommendedWindows=[],candidates=[],events=[],analysisInfo={},screenCalls=0,clipCalls=0,screenFailures=0;
  const tasksReady=()=>true,readObservationTasks=()=>[{task:'分类'}],waitForVideoMetadata=async()=>{},showStep=()=>{},setAutoControls=()=>{},autoMessage=()=>{},renderWindows=()=>{},renderCandidates=()=>{},renderEvents=()=>{},updateAutoProgress=()=>{},saveDraft=()=>{},timeLabel=String;
- const analyzeScreenWindow=async w=>{screenCalls++;if(failOnce&&w.start_seconds===120){failOnce=false;throw Object.assign(new Error('overload'),{retryable:true})}w.windows=[{start_seconds:w.start_seconds,end_seconds:Math.min(w.end_seconds,w.start_seconds+30),reason:'操作'}]};
+ const analyzeScreenWindow=async w=>{screenCalls++;if(w.start_seconds===120&&screenFailures++<3){throw Object.assign(new Error('overload'),{retryable:true})}w.windows=[{start_seconds:w.start_seconds,end_seconds:Math.min(w.end_seconds,w.start_seconds+30),reason:'操作'}]};
  const analyzeClip=async()=>{clipCalls++;recommendedWindows.find(w=>w.id===selectedWindowId).status='analyzed'};
  ${start}
  return {run:startAssessment,state:()=>({analysisInfo,recommendedWindows,screenCalls,clipCalls})};
 `);
 const entry=factory($,{querySelectorAll:()=>[]},async()=>Response.json({ready:true}));
 await entry.run();assert.equal(entry.state().clipCalls,0,'Incomplete initial screening must pause before focus analysis');
-await entry.run({useCompletedScreening:true});assert.equal(entry.state().screenCalls,2,'Explicit partial continuation never retries failed screening');assert.ok(entry.state().clipCalls>0);assert.equal(entry.state().analysisInfo.screening_incomplete,true);assert.ok(entry.state().analysisInfo.screening_windows.some(w=>w.status!=='analyzed'),'Missing screening is preserved, never marked complete');
-await entry.run();const state=entry.state();assert.equal(state.screenCalls,4,'Completed screening windows are reused');assert.equal(state.analysisInfo.workflow_version,'screen-focus-v2');assert.ok(state.clipCalls>0);
+await entry.run({useCompletedScreening:true});assert.equal(entry.state().screenCalls,4,'Explicit partial continuation never retries failed screening');assert.ok(entry.state().clipCalls>0);assert.equal(entry.state().analysisInfo.screening_incomplete,true);assert.ok(entry.state().analysisInfo.screening_windows.some(w=>w.status!=='analyzed'),'Missing screening is preserved, never marked complete');
+await entry.run();const state=entry.state();assert.equal(state.screenCalls,6,'Completed screening windows are reused');assert.equal(state.analysisInfo.workflow_version,'screen-focus-v2');assert.ok(state.clipCalls>0);
 assert.equal(state.analysisInfo.screening_incomplete,false);
-await entry.run();assert.equal(entry.state().screenCalls,4);assert.equal(entry.state().clipCalls,state.clipCalls,'Resume must not rerun completed focus windows');
+await entry.run();assert.equal(entry.state().screenCalls,6);assert.equal(entry.state().clipCalls,state.clipCalls,'Resume must not rerun completed focus windows');
 $('#analysisStrategy').value='full';await entry.run();assert.equal(entry.state().analysisInfo.workflow_version,'whole-class-v1');assert.ok(entry.state().recommendedWindows.some(w=>w.source==='whole_class'));
 console.log('Fast analysis: range validation, low-cost screening, no scoring candidates, usage, overload/expiry, resume and full-mode compatibility passed');
