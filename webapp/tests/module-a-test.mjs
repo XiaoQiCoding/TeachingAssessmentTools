@@ -60,3 +60,9 @@ assert.equal(policyResult(zero).dimensions[4].score,0);
 assert.equal(policyResult(zero.map(r=>({...r,exceptional_zero_reason:''}))).dimensions[4].score,2);
 assert.equal(policyResult(rows.map(r=>r.id==='A4'?{...r,score:1,status:'concern',evidence:'未提供材质尺寸和消毒说明，无法判断是否有小零件'}:r)).dimensions[3].score,5);
 console.log('Module A lenient policy: all five scored, provisional minimum 2, safety deduction, evidenced zero and no missing-info veto passed');
+
+const partial=rows.map(r=>({...r,score:2,status:'concern',evidence_level:'partial',evidence:'文字已写明分组操作和必要辅助，仅未逐件列数量'}));
+assert.deepEqual(policyResult(partial).dimensions.map(r=>r.score),[4,4,4,5,4]);
+const clearDesign=rows.map(r=>({...r,evidence_level:'direct',evidence:'教案写明具体任务、教具用途、操作或辅助安排；未附实物照片'}));
+assert.deepEqual(policyResult(clearDesign).dimensions.map(r=>r.score),[5,5,5,5,5]);
+console.log('Core design anchors: actionable text counts as direct evidence, partial implementation remains 4, genuine vague/missing still 2-3');
