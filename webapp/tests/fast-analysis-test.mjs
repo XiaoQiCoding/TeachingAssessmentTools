@@ -53,7 +53,7 @@ const factory=new Function('$','document','fetch',helpers+coverage+`
 const entry=factory($,{querySelectorAll:()=>[]},async()=>Response.json({ready:true}));
 await entry.run();assert.equal(entry.state().clipCalls,0,'Incomplete initial screening must pause before focus analysis');
 await entry.run({useCompletedScreening:true});assert.equal(entry.state().screenCalls,2,'Explicit partial continuation never retries failed screening');assert.ok(entry.state().clipCalls>0);assert.equal(entry.state().analysisInfo.screening_incomplete,true);assert.ok(entry.state().analysisInfo.screening_windows.some(w=>w.status!=='analyzed'),'Missing screening is preserved, never marked complete');
-await entry.run();const state=entry.state();assert.equal(state.screenCalls,4,'Completed screening windows are reused');assert.equal(state.analysisInfo.workflow_version,'screen-focus-v1');assert.ok(state.clipCalls>0);
+await entry.run();const state=entry.state();assert.equal(state.screenCalls,4,'Completed screening windows are reused');assert.equal(state.analysisInfo.workflow_version,'screen-focus-v2');assert.ok(state.clipCalls>0);
 assert.equal(state.analysisInfo.screening_incomplete,false);
 await entry.run();assert.equal(entry.state().screenCalls,4);assert.equal(entry.state().clipCalls,state.clipCalls,'Resume must not rerun completed focus windows');
 $('#analysisStrategy').value='full';await entry.run();assert.equal(entry.state().analysisInfo.workflow_version,'whole-class-v1');assert.ok(entry.state().recommendedWindows.some(w=>w.source==='whole_class'));

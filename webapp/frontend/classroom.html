@@ -40,7 +40,7 @@
 <p id="lessonMaterialStatus" class="mini-tip"></p>
             <div class="filebox"><label><strong>选择课堂视频</strong><input id="videoFile" type="file" accept="video/*" /></label><p id="videoMaterialStatus" class="mini-tip"></p><div class="file-meta" id="videoMeta">尚未选择视频。已选材料会保存在本浏览器。</div></div>
               <label class="consent"><input type="checkbox" id="aiConsent" /><span>我确认本视频已取得学校及监护人授权，同意原视频上传至本服务临时切片（闲置6小时后清理），教案、文字稿和选取的视频片段或画面发送给所选模型（千问由阿里云处理，MiniMax 由 MiniMax 处理），用于本次分析。选用音轨转写时，音轨另发送至 MiniMax 语音转写服务。</span></label>
-<div class="two" style="margin:14px 0"><label>分析方式<select class="control" id="analysisStrategy"><option value="quick">快速分析：全课初筛，再精看重点</option><option value="full">完整检查：逐段分析全课</option></select></label><label>连续片段画面密度（千问）<select class="control" id="detailFps"><option value="2">每秒2帧（动作与辅助优先）</option><option value="1">每秒1帧（节省用量，可能遗漏短动作）</option></select></label></div><p class="mini-tip">快速分析每4秒检查一张画面，覆盖全课并寻找操作、辅助、迁移及情绪线索，再精看连续过程；可能遗漏短暂行为。初筛线索不参与评分，可随时补充指定片段或改用完整检查。完整检查同样不能保证逐帧识别。</p><div id="uploadStatus" class="mini-tip" role="status">选择教案和视频后即可开始；已保存的教案可以继续使用。</div><div class="action-row"><button id="startAssessment" class="btn primary">开始分析</button><button id="openExistingReview" class="btn secondary hidden">查看已有片段</button></div>
+<div class="two" style="margin:14px 0"><label>分析方式<select class="control" id="analysisStrategy"><option value="quick">快速分析：全课初筛，再精看重点</option><option value="full">完整检查：逐段分析全课</option></select></label><label>连续片段画面密度（千问）<select class="control" id="detailFps"><option value="2">每秒2帧（动作与辅助优先）</option><option value="1">每秒1帧（节省用量，可能遗漏短动作）</option></select></label></div><p class="mini-tip">快速分析每4秒检查一张画面覆盖全课，再按任务与观察类别选择代表片段；变化、异常优先，减少重复精看；可能遗漏短暂行为。初筛线索不参与评分，可随时补充指定片段或改用完整检查。完整检查同样不能保证逐帧识别。</p><div id="uploadStatus" class="mini-tip" role="status">选择教案和视频后即可开始；已保存的教案可以继续使用。</div><div class="action-row"><button id="startAssessment" class="btn primary">开始分析</button><button id="openExistingReview" class="btn secondary hidden">查看已有片段</button></div>
 <details class="edit-details" id="planSettings"><summary>查看教学目标与评估条件（可选修改）</summary>            <div class="action-row" style="margin-top:12px"><button class="btn primary" id="extractPlan">智能提取教案要点</button></div><div id="planResult" class="plan-result"></div>
             <div id="planSummary" class="hidden"><div class="summary-grid"><div class="summary-item"><small>课程</small><strong id="summaryLesson">—</strong></div><div class="summary-item"><small>目标</small><strong><span id="goalCount">0</span> 项</strong></div><div class="summary-item"><small>课堂环节</small><strong><span id="stepCount">0</span> 个</strong></div><div class="summary-item"><small>迁移任务</small><strong><span id="transferCount">0</span> 项</strong></div></div></div>
             <details class="edit-details hidden" id="planDetails"><summary>识别结果需要修改？点击展开</summary><div class="edit-content"><div class="field" style="margin-top:5px"><label for="lessonName">课程名称</label><input class="control" id="lessonName" placeholder="例如：剥西红柿" /></div>
@@ -61,7 +61,7 @@
         <div class="right-column">
           <section class="card wizard-panel" id="panel3" hidden><div class="card-head"><div><h2>第三步 核对 AI 发现的片段</h2><p>支持一键采纳AI判断；也可抽查、修改后逐条确认</p></div><span id="eventCount" class="status insufficient_evidence">已确认 0 条</span></div><div class="card-body">
             <details class="edit-details" id="fullVideoDetails"><summary>查看完整视频</summary><div id="videoSlot"></div><div class="mini-tip">当前视频时间：<span class="clock" id="clock">00:00</span></div></details>
-<div class="analysis-box" id="autoProgressBox"><div class="analysis-head"><strong id="autoTitle">按教案分析课堂</strong><div class="action-row"><button id="resumeAssessment" class="btn primary">继续分析 / 重试未完成片段</button><button id="pauseAssessment" class="btn secondary hidden">暂停分析</button></div></div><div class="action-row" style="margin-bottom:12px"><button id="continueFocused" class="btn primary hidden">使用已完成初筛，继续精看</button><button id="reviewAvailable" class="btn secondary hidden">下一步：核对已有片段</button><button id="reselectSource" class="btn secondary hidden">重新选择原视频</button></div><p id="nextActionHint" class="mini-tip" role="status"></p><p class="mini-tip">先从教案建立观察参照。快速分析先初筛全课画面，再精看重点与首中尾固定抽查；完整检查逐段分析全课。任务过程不完整时补查，未发现线索的指标保留待评。可以暂停后继续。</p><p id="autoStatus" role="status" aria-live="polite">等待开始分析。</p><progress id="autoProgress" max="1" value="0" style="width:100%"></progress><p id="coverageSummary" class="mini-tip">尚未检查视频。</p><p id="timingSummary" class="mini-tip"></p><div id="evidenceGaps" class="mini-tip"></div><details><summary>查看课堂时间轴与分析范围</summary><div id="activityTimeline" class="mini-tip"></div></details></div>
+<div class="analysis-box" id="autoProgressBox"><div class="analysis-head"><strong id="autoTitle">按教案分析课堂</strong><div class="action-row"><button id="resumeAssessment" class="btn primary">继续分析 / 重试未完成片段</button><button id="pauseAssessment" class="btn secondary hidden">暂停分析</button></div></div><div class="action-row" style="margin-bottom:12px"><button id="continueFocused" class="btn primary hidden">使用已完成初筛，继续精看</button><button id="reviewAvailable" class="btn secondary hidden">下一步：核对已有片段</button><button id="reselectSource" class="btn secondary hidden">重新选择原视频</button></div><p id="nextActionHint" class="mini-tip" role="status"></p><p class="mini-tip">先从教案建立观察参照。快速分析先初筛全课画面，再按任务选代表片段与首中尾抽查，减少重复精看；完整检查逐段分析全课。任务过程不完整时补查，未发现线索的指标保留待评。可以暂停后继续。</p><p id="autoStatus" role="status" aria-live="polite">等待开始分析。</p><progress id="autoProgress" max="1" value="0" style="width:100%"></progress><p id="coverageSummary" class="mini-tip">尚未检查视频。</p><p id="focusSelectionSummary" class="mini-tip"></p><details id="deferredFocusDetails" hidden><summary>查看未精看的重复线索</summary><div id="deferredFocusList" class="mini-tip"></div></details><p id="timingSummary" class="mini-tip"></p><div id="evidenceGaps" class="mini-tip"></div><details><summary>查看课堂时间轴与分析范围</summary><div id="activityTimeline" class="mini-tip"></div></details></div>
 <div class="analysis-box"><strong>待核对片段</strong><p class="mini-tip">可一键采纳全部可用AI候选；也可抽查重点片段，修改或忽略不符合的记录。</p><div id="candidateReviewToolbar"><div class="action-row"><button id="approveAiBatch" class="btn primary">一键通过并生成报告</button><button id="undoAiBatch" class="btn ghost" hidden>撤销上次批量通过</button></div><p class="mini-tip">快捷方式：信任AI并批量采纳，直接生成评分建议；未逐条回看的记录会明确标注。也可先抽查或修改，已忽略及人工确认的记录不覆盖；缺证项目保留待评。</p><div class="ai-actions"><button class="btn secondary" id="selectAllCandidates" disabled>全选已回看的片段</button><button class="btn primary" id="acceptCandidates" disabled>确认已勾选片段</button><span class="mini-tip" id="candidateHint">0 个候选节点</span></div><p id="candidateSelectionStatus" class="mini-tip" role="status" aria-live="polite"></p></div><div class="candidate-list" id="candidateList"><div class="empty">完成 AI 分析后，候选时间节点会显示在这里。</div></div>
 </div><details class="edit-details" id="analysisAdvanced"><summary>补充检查与文字稿（选用）</summary><div class="mini-tip" id="analysisMode"></div><button class="btn secondary" id="analyzeVideo">生成文字稿并辅助定位（选用）</button>              <div class="clip-tools"><strong>文字稿辅助定位（选用）</strong><p class="mini-tip">可另外提取音轨、生成带时间文字稿，帮助寻找需要补查的任务。文字稿只能帮助定位；学生实际表现仍以回放的画面和声音为准。</p><div class="action-row"><button class="btn ghost hidden" id="cancelTranscript">取消转写</button><button class="btn secondary" id="locateTranscript">根据文字稿重新定位</button><button class="btn ghost" id="scanVisualClues">补充检查全课画面</button></div><label class="file-meta">已有字幕？导入 SRT / VTT / 带时间的 JSON<input id="transcriptFile" type="file" accept=".srt,.vtt,.json"/></label><p class="mini-tip" id="transcriptStatus" role="status">尚未生成文字稿。</p><details><summary>查看或修正文字稿</summary><div id="transcriptRows"></div><button class="btn secondary" id="applyTranscriptEdits">保存文字稿修改</button></details><h4>AI 推荐检查的片段</h4><div id="recommendedWindows"><p class="mini-tip">生成或导入文字稿后，AI 会自动定位。</p></div></div>
               <div class="analysis-state" id="analysisState">尚未开始。AI 结果仅作候选，必须人工确认。</div>
@@ -141,7 +141,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     active.module_b={saved_at:Date.now(),evidence_version:2,plan_source_key:loadedPlanKey,candidates:[...candidates],report:reportData,events:[...events],analysis_info:analysisInfo,video_name:selectedVideoName,video_identity:videoIdentity,video_duration:selectedVideoDuration,transcript_state:transcriptState,recommended_windows:recommendedWindows,observation_tasks:readObservationTasks(),observation_plan:$('#observationPlan').value,instructions:$('#instructions').value,students:[...document.querySelectorAll('.student')].map(input=>input.value),analysis_state:$('#analysisState').textContent};active.updated_at=new Date().toISOString();records[index]=active;localStorage.setItem(RECORDS_KEY,JSON.stringify(records));}catch{}
   }
   function saveDraft(){if(restoringDraft)return;updateAutoProgress();try{const students=[...document.querySelectorAll('.student')].map(input=>input.value);localStorage.setItem(DRAFT_KEY,JSON.stringify({saved_at:Date.now(),step:currentStep,plan_source_key:loadedPlanKey,video_name:selectedVideoName,video_identity:videoIdentity,video_duration:selectedVideoDuration,transcript_state:transcriptState,recommended_windows:recommendedWindows,observation_tasks:readObservationTasks(),observation_plan:$('#observationPlan').value,plan_ready:!$('#toStep2').disabled,lesson:$('#lessonName').value,goals:$('#goals').value,instructions:$('#instructions').value,step_count:$('#stepCount').textContent,transfer_count:$('#transferCount').textContent,students,candidates,events,analysis_info:analysisInfo,analysis_state:$('#analysisState').textContent,report:reportData}));syncEvaluationRecord();$('#clearDraft').classList.remove('hidden')}catch{}}
-  function restoreDraft(){let draft;try{draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null')||recordDraft()||(ACTIVE_RECORD_ID==='standalone'?JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY)||'null'):null)}catch{return false}if(!draft)return false;const formal=recordDraft();if(formal&&!draft.report&&!draft.candidates?.length&&!draft.events?.length&&(formal.report||formal.candidates?.length||formal.events?.length))draft=formal;if(!draft.saved_at||Date.now()-draft.saved_at>DRAFT_TTL){localStorage.removeItem(DRAFT_KEY);draft=recordDraft();if(!draft)return false;draft.saved_at=Date.now()}restoringDraft=true;loadedPlanKey=String(draft.plan_source_key||'');selectedVideoName=String(draft.video_name||'');videoIdentity=draft.video_identity||'';selectedVideoDuration=Number(draft.video_duration||draft.transcript_state?.duration||draft.report?.audit?.video_duration)||0;transcriptState=draft.transcript_state||null;recommendedWindows=draft.recommended_windows||[];renderTranscript();renderWindows();observationTasks=Array.isArray(draft.observation_tasks)&&draft.observation_tasks.length?draft.observation_tasks:migrateObservationTasks(draft.observation_plan,draft.goals);renderObservationTasks();$('#lessonName').value=draft.lesson||'';$('#goals').value=draft.goals||'';$('#instructions').value=draft.instructions||'';[...document.querySelectorAll('.student')].forEach((input,index)=>input.value=draft.students?.[index]||'');candidates=Array.isArray(draft.candidates)?draft.candidates:[];events.splice(0,events.length,...(Array.isArray(draft.events)?draft.events:[]));analysisInfo=draft.analysis_info||analysisInfo;$('#analysisStrategy').value=analysisInfo.analysis_mode||(recommendedWindows.length?'full':'quick');$('#detailFps').value=String(analysisInfo.detail_fps||2);const savedReport=draft.report||null,refreshReport=false;reportData=savedReport;if(draft.plan_ready){$('#summaryLesson').textContent=draft.lesson||'未命名课程';$('#goalCount').textContent=(draft.goals||'').split(/\n+/).filter(Boolean).length;$('#stepCount').textContent=draft.step_count||'—';$('#transferCount').textContent=draft.transfer_count||'—';$('#planSummary').classList.remove('hidden');$('#planDetails').classList.remove('hidden');$('#planResult').classList.add('show');$('#planResult').textContent='已从当前评估记录恢复教案观察计划。';$('#step1Hint').textContent='教案要点已恢复，可以继续。';$('#toStep2').disabled=false}$('#analysisState').textContent=draft.analysis_state||'已恢复候选节点，请重新选择原视频后播放核对。';renderCandidates();renderEvents();if(candidates.length){const unfinished=recommendedWindows.some(w=>w.status!=='analyzed')||(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed');$('#autoTitle').textContent=unfinished?'已有结果，可继续复核':'分析完成，请核对片段';autoMessage(`已恢复 ${candidates.length} 条候选、${recommendedWindows.filter(w=>w.status==='analyzed').length} 个已完成片段；可一键通过或抽查，无需重新分析。`);$('#resumeAssessment').textContent='检查剩余分析（选用）';}if(reportData){renderReport(reportData);$('#viewSavedReport').classList.remove('hidden')}$('#clearDraft').classList.remove('hidden');$('#draftNotice').classList.remove('hidden');$('#draftNotice').textContent=`已恢复 ${events.length} 条正式证据和 ${candidates.length} 个 AI 候选节点。上次选择的教案和视频会从本浏览器恢复；正式评估记录持续保留。`;const target=(reportData||refreshReport)&&draft.step>=4?4:draft.step>=3?3:Math.max(1,Number(draft.step)||1);showStep(target,false);restoringDraft=false;if(refreshReport){$('#reportEmpty').classList.remove('hidden');$('#reportEmpty').textContent='检测到旧版报告，正在保留已确认的证据并按新版量表重新生成……';setTimeout(()=>generateReport($('#generateReport')),0)}return true}
+  function restoreDraft(){let draft;try{draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null')||recordDraft()||(ACTIVE_RECORD_ID==='standalone'?JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY)||'null'):null)}catch{return false}if(!draft)return false;const formal=recordDraft();if(formal&&!draft.report&&!draft.candidates?.length&&!draft.events?.length&&(formal.report||formal.candidates?.length||formal.events?.length))draft=formal;if(!draft.saved_at||Date.now()-draft.saved_at>DRAFT_TTL){localStorage.removeItem(DRAFT_KEY);draft=recordDraft();if(!draft)return false;draft.saved_at=Date.now()}restoringDraft=true;loadedPlanKey=String(draft.plan_source_key||'');selectedVideoName=String(draft.video_name||'');videoIdentity=draft.video_identity||'';selectedVideoDuration=Number(draft.video_duration||draft.transcript_state?.duration||draft.report?.audit?.video_duration)||0;transcriptState=draft.transcript_state||null;recommendedWindows=draft.recommended_windows||[];renderTranscript();renderWindows();observationTasks=Array.isArray(draft.observation_tasks)&&draft.observation_tasks.length?draft.observation_tasks:migrateObservationTasks(draft.observation_plan,draft.goals);renderObservationTasks();$('#lessonName').value=draft.lesson||'';$('#goals').value=draft.goals||'';$('#instructions').value=draft.instructions||'';[...document.querySelectorAll('.student')].forEach((input,index)=>input.value=draft.students?.[index]||'');candidates=Array.isArray(draft.candidates)?draft.candidates:[];events.splice(0,events.length,...(Array.isArray(draft.events)?draft.events:[]));analysisInfo=draft.analysis_info||analysisInfo;$('#analysisStrategy').value=analysisInfo.analysis_mode||(recommendedWindows.length?'full':'quick');$('#detailFps').value=String(analysisInfo.detail_fps||2);const savedReport=draft.report||null,refreshReport=false;reportData=savedReport;if(draft.plan_ready){$('#summaryLesson').textContent=draft.lesson||'未命名课程';$('#goalCount').textContent=(draft.goals||'').split(/\n+/).filter(Boolean).length;$('#stepCount').textContent=draft.step_count||'—';$('#transferCount').textContent=draft.transfer_count||'—';$('#planSummary').classList.remove('hidden');$('#planDetails').classList.remove('hidden');$('#planResult').classList.add('show');$('#planResult').textContent='已从当前评估记录恢复教案观察计划。';$('#step1Hint').textContent='教案要点已恢复，可以继续。';$('#toStep2').disabled=false}$('#analysisState').textContent=draft.analysis_state||'已恢复候选节点，请重新选择原视频后播放核对。';renderCandidates();renderEvents();if(candidates.length){const unfinished=recommendedWindows.some(w=>!['analyzed','deferred'].includes(w.status))||(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed');$('#autoTitle').textContent=unfinished?'已有结果，可继续复核':'分析完成，请核对片段';autoMessage(`已恢复 ${candidates.length} 条候选、${recommendedWindows.filter(w=>w.status==='analyzed').length} 个已完成片段；可一键通过或抽查，无需重新分析。`);$('#resumeAssessment').textContent='检查剩余分析（选用）';}if(reportData){renderReport(reportData);$('#viewSavedReport').classList.remove('hidden')}$('#clearDraft').classList.remove('hidden');$('#draftNotice').classList.remove('hidden');$('#draftNotice').textContent=`已恢复 ${events.length} 条正式证据和 ${candidates.length} 个 AI 候选节点。上次选择的教案和视频会从本浏览器恢复；正式评估记录持续保留。`;const target=(reportData||refreshReport)&&draft.step>=4?4:draft.step>=3?3:Math.max(1,Number(draft.step)||1);showStep(target,false);restoringDraft=false;if(refreshReport){$('#reportEmpty').classList.remove('hidden');$('#reportEmpty').textContent='检测到旧版报告，正在保留已确认的证据并按新版量表重新生成……';setTimeout(()=>generateReport($('#generateReport')),0)}return true}
   function showStep(step,persist=true){if(step===2)step=1;currentStep=step;document.querySelectorAll('.wizard-panel').forEach(panel=>panel.hidden=panel.id!==`panel${step}`);document.querySelectorAll('.step').forEach(item=>{const n=Number(item.dataset.step);item.classList.toggle('current',n===step);item.classList.toggle('done',n<step)});if(persist)saveDraft();window.scrollTo({top:0,behavior:'smooth'})}
   document.querySelectorAll('[data-back]').forEach(button=>button.addEventListener('click',()=>showStep(Number(button.dataset.back))));
   $('#toStep2').addEventListener('click',()=>{if(!tasksReady()){showTaskProblem();return}showStep(2)});$('#viewSavedReport').onclick=()=>showStep(4);
@@ -515,16 +515,55 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     for(let start=0;start<duration;start+=120){const end=Math.min(duration,start+120);if(!windows.some(w=>w.start_seconds===start&&w.end_seconds===end))windows.push({id:'SCREEN-'+start,start_seconds:start,end_seconds:end,video_identity:identity,status:'pending',source:'screening'});}
     return windows;
   }
+  function focusCategories(w){
+    const allowed=['participation','understanding','operation','transfer','emotion'];
+    const explicit=Array.isArray(w.evidence_types)?w.evidence_types.filter(x=>allowed.includes(x)):[];
+    if(explicit.length)return [...new Set(explicit)].sort();
+    const reason=String(w.reason||'');
+    return allowed.filter((x,i)=>[/参与|回避/,/理解|指令|反应/,/操作|辅助/,/迁移|泛化|更换|变化/,/情绪|哭|尖叫/][i].test(reason));
+  }
+  function focusTask(w){return String(w.task_key||w.task_name||w.reason||'').replace(/[\s，。；、：:,.!?！？]/g,'').trim()}
+  function focusKey(w,duration=1){return focusTask(w)+'|'+focusCategories(w).join(',')+'|'+(w.observation_target&&w.observation_target!=='待确认'?w.observation_target:'待确认-'+Math.min(2,Math.floor(w.start_seconds/duration*3)))+'|'+String(w.support_level||'unknown')}
+  function focusEvidenceCovered(w,items){
+    // Screening labels only guide selection. Only complete dense-video facts can stop repetition.
+    if(w.priority==='concern'||w.change_type==='change'||w.id.startsWith('SAMPLE-')||!w.task_key||!w.observation_target||w.observation_target==='待确认')return false;
+    const categories=focusCategories(w);if(!categories.length)return false;
+    const valid=items.filter(e=>['continuous_clip','native_video'].includes(e.analysis_source)&&(!w.observation_target||w.observation_target==='待确认'||e.student_id===w.observation_target)&&(!w.support_level||w.support_level==='unknown'||e.assistance===w.support_level)&&!e.ignored&&e.video_identity===w.video_identity&&String(e.task||'').trim()===String(w.task_key).trim()&&
+      ['excellent','achieved','partial','minimal','not_achieved'].includes(e.completion_quality)&&String(e.actual_response||'').trim()&&
+      !/不完整|截断|片段外|看不清|无法判断|遮挡/.test(String(e.limitations||'')));
+    return categories.every(category=>valid.some(e=>category==='participation'?['engagement','avoidance','response','operation'].includes(e.type):
+      category==='understanding'?['response','operation'].includes(e.type)&&e.expected_response:
+      category==='operation'?e.type==='operation'&&e.expected_response:
+      category==='transfer'?e.type==='generalization'&&e.phase==='generalization'&&String(e.changed_context||'').trim():
+      ['emotion','avoidance'].includes(e.type)));
+  }
   function buildFocusedWindows(duration,identity,screens,existing=[]){
-    const windows=existing.filter(w=>w.video_identity===identity);
-    const add=(start,end,reason,id,priority='normal')=>{
-      const duplicate=windows.find(w=>Math.min(w.end_seconds,end)-Math.max(w.start_seconds,start)>=.8*(end-start));
-      if(duplicate){if(duplicate.source==='focused'&&priority==='concern'){duplicate.priority='concern';if(!duplicate.reason.includes(reason))duplicate.reason+='；'+reason}return;}
-      windows.push({id,task:'连续片段精看',start_seconds:start,end_seconds:end,reason,priority,transcript:[],video_identity:identity,source:'focused',status:'pending'});
+    // Preserve completed work and bounded-policy follow-ups when resuming, but reselect old pending recommendations.
+    const windows=existing.filter(w=>w.video_identity===identity&&(w.status==='analyzed'||w.selection_policy==='evidence-v2'));
+    const deferred=[];
+    const add=w=>{
+      const duplicate=windows.find(old=>old.id===w.id||Math.min(old.end_seconds,w.end_seconds)-Math.max(old.start_seconds,w.start_seconds)>=.8*(w.end_seconds-w.start_seconds));
+      if(duplicate){if(w.priority==='concern'){duplicate.priority='concern';if(!duplicate.reason.includes(w.reason))duplicate.reason+='；'+w.reason}return;}
+      windows.push({...w,task:'连续片段精看',transcript:[],video_identity:identity,source:'focused',status:'pending',selection_policy:'evidence-v2'});
     };
-    for(const screen of screens.filter(w=>w.status==='analyzed'&&w.video_identity===identity))for(const [i,w]of (screen.windows||[]).entries())add(w.start_seconds,w.end_seconds,w.reason,screen.id+'-FOCUS-'+i,w.priority);
-    // Independent beginning/middle/end samples prevent selecting only obvious positive activities.
-    for(const ratio of [0,.5,1]){const start=Math.max(0,Math.min(duration-30,duration*ratio-15)),end=Math.min(duration,start+30);add(start,end,'固定抽查：补看参与、回避、无语言操作及表情；不得据此推断全课稳定。','SAMPLE-'+ratio);}
+    const pool=[];
+    for(const screen of screens.filter(w=>w.status==='analyzed'&&w.video_identity===identity))for(const [i,w]of (screen.windows||[]).entries())
+      pool.push({...w,id:screen.id+'-FOCUS-'+i,video_identity:identity});
+    // Verify negative/change clues before routine representatives; ordinary assistance alone is not an anomaly.
+    pool.sort((a,b)=>(b.priority==='concern')-(a.priority==='concern')||(b.change_type==='change')-(a.change_type==='change')||a.start_seconds-b.start_seconds);
+    const represented=new Set(windows.filter(w=>w.priority!=='concern'&&w.change_type!=='change'&&!w.id.startsWith('SAMPLE-')).map(w=>focusKey(w,duration)));
+    for(const w of pool){
+      const key=focusKey(w,duration);
+      if(w.priority!=='concern'&&w.change_type!=='change'&&focusTask(w)&&represented.has(key)){
+        if(!windows.some(old=>old.id===w.id))deferred.push({...w,status:'deferred',deferred_reason:'同一任务与观察类别已有代表片段；未精看，不作评分证据。'});
+        continue;
+      }
+      add(w);represented.add(key);
+    }
+    // Independent samples remain even if routine recommendations are redundant.
+    for(const ratio of [0,.5,1]){const start=Math.max(0,Math.min(duration-30,duration*ratio-15)),end=Math.min(duration,start+30);
+      add({id:'SAMPLE-'+ratio,start_seconds:start,end_seconds:end,reason:'固定抽查：补看参与、回避、无语言操作及表情；不得据此推断全课稳定。',priority:'normal'});}
+    windows.selection_summary={recommended:pool.length,deferred,retired:existing.filter(w=>w.video_identity===identity&&!windows.some(x=>x.id===w.id)&&w.timing_totals).map(w=>({...w,status:'deferred',deferred_reason:'旧计划未继续精看；历史请求耗时保留。'})),policy:'按任务与观察类别选代表；变化与异常优先，已看证据不足不视为达标。'};
     return windows;
   }
   async function analyzeScreenWindow(w,signal){
@@ -569,15 +608,19 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       {id:'B5',label:'情绪行为',items:rows.filter(e=>e.phase==='tool_use'&&['emotion','avoidance'].includes(e.type)),need:'需观察可见表情、哭闹、尖叫或回避；不能以未记录问题推断全课稳定'}
     ];
   }
-  function buildFollowupWindows(duration,identity,windows,items){
-    const result=[];
+  function buildFollowupWindows(duration,identity,windows,items,quick=false){
+    const result=[],tasks=new Set(windows.filter(w=>w.source==='evidence_followup').map(w=>w.followup_key||w.followup_task));
     for(const item of items.filter(e=>!e.ignored&&e.video_identity===identity)){
       if(item.completion_quality!=='unknown'&&!/不完整|截断|片段外|未看清|无法判断/.test(String(item.limitations||'')))continue;
+      const task=String(item.task||'').trim(),limitations=String(item.limitations||'').replace('本次千问仅分析画面，声音及节奏正确性未核实','');
+      const followupKey=task+'|'+String(item.student_id||'待确认')+'|'+String(item.type||'');
+      if(quick&&(!/不完整|截断|片段外/.test(limitations)||/声音|音频|听不清|遮挡|镜头外|身份不明/.test(limitations)||!task||tasks.has(followupKey)))continue;
       const start=Number(item.start_seconds),end=Number(item.end_seconds);
       if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;
       const from=Math.max(0,Math.min(duration-60,(start+end)/2-30)),to=Math.min(duration,from+60);
       if(to<=from||[...windows,...result].some(w=>Math.abs(w.start_seconds-from)<5&&Math.abs(w.end_seconds-to)<5))continue;
-      result.push({id:`FOLLOW-${from.toFixed(2)}`,task:item.task||'补查不完整任务',start_seconds:from,end_seconds:to,reason:`补查已有线索：${String(item.task||item.actual_response||'任务过程').slice(0,100)}。核对前后指令、辅助与结果；仍无法判断时保留未知。`,transcript:[],video_identity:identity,source:'evidence_followup',status:'pending'});
+      result.push({id:`FOLLOW-${from.toFixed(2)}`,task:item.task||'补查不完整任务',start_seconds:from,end_seconds:to,reason:`补查已有线索：${String(item.task||item.actual_response||'任务过程').slice(0,100)}。核对前后指令、辅助与结果；仍无法判断时保留未知。`,transcript:[],video_identity:identity,source:'evidence_followup',status:'pending',followup_task:task,followup_key:followupKey,selection_policy:quick?'evidence-v2':null});
+      tasks.add(followupKey);
       if(result.length>=6)break;
     }
     return result;
@@ -599,20 +642,20 @@ const fetch=(...args)=>window.evaluationFetch(...args);
   async function runWindowQueue(windows,analyze,signal,onProgress){
     for(const w of windows){
       if(signal.aborted)break;
-      if(w.status==='analyzed')continue;
+      if(w.status==='analyzed'||w.status==='deferred')continue;
       w.status='analyzing';delete w.error;onProgress(windows,w);
-      try{await analyze(w);if(signal.aborted){w.status='pending';break}w.status='analyzed'}
+      try{const used=await analyze(w);if(signal.aborted){w.status='pending';break}w.status=used===false?'deferred':'analyzed'}
       catch(error){w.status=signal.aborted?'pending':'failed';w.error=error.message;if(error.retryable){onProgress(windows,w);break}}
       onProgress(windows,w);
     }
-    return {completed:windows.filter(w=>w.status==='analyzed').length,failed:windows.filter(w=>w.status==='failed').length,total:windows.length};
+    return {completed:windows.filter(w=>w.status==='analyzed'||w.status==='deferred').length,failed:windows.filter(w=>w.status==='failed').length,total:windows.length};
   }
   function coverageSeconds(windows){
     const spans=windows.filter(w=>w.status==='analyzed').map(w=>[Number(w.start_seconds),Number(w.end_seconds)]).filter(([a,b])=>Number.isFinite(a)&&Number.isFinite(b)&&b>a).sort((a,b)=>a[0]-b[0]);
     let total=0,end=0;for(const [a,b]of spans){total+=Math.max(0,b-Math.max(a,end));end=Math.max(end,b)}return total;
   }
   function updateAutoProgress(){
-    const screens=(analysisInfo.screening_windows||[]).filter(w=>w.video_identity===videoIdentity);const allWindows=[...screens,...recommendedWindows];
+    const screens=(analysisInfo.screening_windows||[]).filter(w=>w.video_identity===videoIdentity);const allWindows=[...screens,...recommendedWindows,...(analysisInfo.focus_selection?.retired||[]).filter(w=>w.video_identity===videoIdentity)];
     const done=recommendedWindows.filter(w=>w.status==='analyzed').length,failed=recommendedWindows.filter(w=>w.status==='failed').length;
     analysisInfo.coverage={screened_seconds:coverageSeconds(screens),reviewed_seconds:coverageSeconds(events.filter(e=>e.confirmed&&e.reviewed_clip&&e.video_identity===videoIdentity).map(e=>({...e,status:'analyzed'}))),checked_seconds:coverageSeconds(recommendedWindows),video_seconds:selectedVideoDuration,completed_windows:done,total_windows:recommendedWindows.length,failed_windows:failed};
     const screeningActive=autoStage==='screening'||(!recommendedWindows.length&&screens.length);
@@ -620,7 +663,12 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     $('#coverageSummary').textContent=(screens.length?'全课初筛 '+timeLabel(coverageSeconds(screens))+' / '+timeLabel(selectedVideoDuration)+'（每4秒一张，无声音，仅定位）；':'')+'人工复核 '+timeLabel(analysisInfo.coverage.reviewed_seconds)+'；'+`已分析 ${done} / ${recommendedWindows.length} 个片段${failed?`，${failed} 个待重试`:''}；已送交模型并完成分析的时段 ${timeLabel(coverageSeconds(recommendedWindows))} / 全课 ${timeLabel(selectedVideoDuration)}。模型可能漏看或无法判断；此范围不等于人工核实范围。`;
     const confirmed=dimensionEvidence(events.filter(e=>e.confirmed&&(e.reviewed_clip||e.review_method==='ai_batch')&&e.video_identity===videoIdentity)),clues=dimensionEvidence(candidates.filter(e=>e.video_identity===videoIdentity));
     $('#evidenceGaps').innerHTML='<strong>指标证据检查（数量不代表证据充分）</strong>'+confirmed.map((d,i)=>`<p>${d.id} ${d.label}：已采纳 ${d.items.length} 条，AI 线索 ${clues[i].items.length} 条。${escapeHtml(d.need)}。</p>`).join('');
-    $('#activityTimeline').innerHTML=allWindows.sort((a,b)=>a.start_seconds-b.start_seconds||a.end_seconds-b.end_seconds).map(w=>`<div style="margin-bottom:12px"><strong>${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}</strong> · ${w.source==='screening'?'初筛（不作评分证据）':w.source==='evidence_followup'?'补查':w.source==='focused'?'重点精看':'课堂区间'} · ${w.status==='analyzed'?'已分析':w.status==='failed'?'待重试':'待分析'}<p>${escapeHtml((w.status==='failed'?w.error:w.summary)||'尚无活动摘要')}</p>${windowDiagnosticHtml(w)}</div>`).join('');
+    const selection=analysisInfo.analysis_mode==='quick'?analysisInfo.focus_selection:null;
+    const deferred=[...(selection?.deferred||[]),...recommendedWindows.filter(w=>w.status==='deferred')];
+    $('#focusSelectionSummary').textContent=selection?`选段规则：同一任务与观察类别选择代表片段，变化与异常优先，并保留首中尾抽查。初筛推荐 ${selection.recommended} 段，重复线索 ${deferred.length} 段未精看；完整结果保留，缺证指标仍待评。`:'';
+    $('#deferredFocusDetails').hidden=!deferred.length;
+    $('#deferredFocusList').innerHTML=deferred.map(w=>`<p>${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}：${escapeHtml(w.reason)}；${escapeHtml(w.deferred_reason)}</p>`).join('');
+    $('#activityTimeline').innerHTML=allWindows.sort((a,b)=>a.start_seconds-b.start_seconds||a.end_seconds-b.end_seconds).map(w=>`<div style="margin-bottom:12px"><strong>${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}</strong> · ${w.source==='screening'?'初筛（不作评分证据）':w.source==='evidence_followup'?'补查':w.source==='focused'?'重点精看':'课堂区间'} · ${w.status==='analyzed'?'已分析':w.status==='failed'?'待重试':w.status==='deferred'?'未精看（重复证据）':'待分析'}<p>${escapeHtml((w.status==='failed'?w.error:w.status==='deferred'?w.deferred_reason:w.summary)||'尚无活动摘要')}</p>${windowDiagnosticHtml(w)}</div>`).join('');
     const measured=allWindows.map(w=>w.timing_totals).filter(Boolean),sum=key=>measured.reduce((n,t)=>n+(Number(t[key])||0),0);
     $('#timingSummary').textContent=measured.length?`已记录 ${sum('attempts')} 次片段处理（含重试）：原视频上传 ${diagnosticDuration(sum('upload_ms'))}；旧流程本机准备 ${diagnosticDuration(sum('capture_ms'))}；片段请求与后台处理合计 ${diagnosticDuration(sum('request_ms'))}，其中服务器切片 ${diagnosticDuration(sum('slice_ms'))}、模型接口往返 ${diagnosticDuration(sum('model_ms'))}、旧流程转码 ${diagnosticDuration(sum('normalization_ms'))}。历史未计时的尝试不在此统计内。`:recommendedWindows.some(w=>['analyzed','failed'].includes(w.status))?'历史片段未记录分项耗时，无法还原过去的占比；后续尝试将单独计时。':'尚无已完成的分项计时；当前准备进度显示在上方，完成或失败后会保存各阶段耗时。';
     const usage=allWindows.map(w=>w.token_totals).filter(u=>u?.measured_calls),input=usage.reduce((n,u)=>n+u.input_tokens,0),output=usage.reduce((n,u)=>n+u.output_tokens,0);
@@ -646,7 +694,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     const useCompletedScreening=options.useCompletedScreening===true;
     if(autoBusy)return;
     const currentPlan=$('#lessonFile').files[0],samePlan=!currentPlan||`${currentPlan.name}:${currentPlan.size}:${currentPlan.lastModified}`===loadedPlanKey;
-    if(samePlan&&candidates.length&&recommendedWindows.length&&recommendedWindows.every(w=>w.status==='analyzed')&&!(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed')&&analysisInfo.task_plan===JSON.stringify(readObservationTasks())){showStep(3);$('#autoTitle').textContent='分析完成，请核对片段';autoMessage('已有分析结果完整，无需重复运行AI。请回放候选，核实后确认。');return;}
+    if(samePlan&&candidates.length&&recommendedWindows.length&&recommendedWindows.every(w=>w.status==='analyzed'||w.status==='deferred')&&!(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed')&&analysisInfo.task_plan===JSON.stringify(readObservationTasks())){showStep(3);$('#autoTitle').textContent='分析完成，请核对片段';autoMessage('已有分析结果完整，无需重复运行AI。请回放候选，核实后确认。');return;}
     if(!$('#videoFile').files[0]){showStep(1);$('#uploadStatus').textContent='请先选择课堂视频；已保存的分析结果会继续保留。';return}
     if(!$('#lessonFile').files[0]&&!$('#goals').value.trim()){showStep(1);$('#uploadStatus').textContent='请先选择本节课教案。';return}
     if(!$('#aiConsent').checked){showStep(1);$('#uploadStatus').textContent='请确认材料分析授权，然后开始。';return}
@@ -654,7 +702,7 @@ const fetch=(...args)=>window.evaluationFetch(...args);
     const file=$('#lessonFile').files[0],key=file?`${file.name}:${file.size}:${file.lastModified}`:'';
     if(file&&key!==loadedPlanKey&&(candidates.length||events.length||recommendedWindows.some(w=>w.status==='analyzed'))&&!confirm('已有AI分析结果。重新读取教案会清空当前候选和片段进度，开始新一轮分析。仅恢复视频回放无需重新选择教案；如需保留结果，请点取消。是否开始新分析？'))return;
     const workflowStarted=Date.now();let workflowError=null;globalThis.evaluationRunId=crypto.randomUUID();globalThis.evaluationDiagnostics?.record('workflow',{status:'started'});autoBusy=true;autoAbort=new AbortController();$('#videoSlot').appendChild($('#video'));$('#video').classList.remove('hidden');showStep(3);document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',el.dataset.step==='2'));const signal=autoAbort.signal;setAutoControls(true);
-    const timer=setInterval(()=>{if(autoBusy){const detail=autoStage==='plan'?$('#planResult').textContent:$('#analysisState').textContent;autoMessage(`${autoStage==='connection'?'检查模型连接':autoStage==='plan'?'建立教案参照':autoStage==='screening'?'全课画面初筛':autoStage==='followup'?'3/3 按证据线索补查':'2/3 分段分析全课'}：${detail}`)}},500);
+    const timer=setInterval(()=>{if(autoBusy){const detail=autoStage==='plan'?$('#planResult').textContent:$('#analysisState').textContent;autoMessage(`${autoStage==='connection'?'检查模型连接':autoStage==='plan'?'建立教案参照':autoStage==='screening'?'全课画面初筛':autoStage==='followup'?'按任务缺口补查':analysisInfo.analysis_mode==='quick'?'代表片段精看':'分段分析全课'}：${detail}`)}},500);
     try{
       autoStage='connection';$('#analysisState').textContent='正在发送最小文字请求检查模型连接，尚未处理教案或视频…';autoMessage($('#analysisState').textContent);
       const readyResponse=await fetch('/api/classroom/model-readiness',{method:'POST',signal:AbortSignal.any([signal,AbortSignal.timeout(20000)])}),readiness=await readyResponse.json();
@@ -662,11 +710,12 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       autoStage='plan';autoMessage('正在整理教案和评估条件，无需填写表单。');
       if(file&&key!==loadedPlanKey){const ok=await extractLesson();if(!ok)throw new Error($('#planResult').textContent);loadedPlanKey=key;recommendedWindows=[];candidates=[];events.splice(0);reportData=null;renderCandidates();renderEvents();saveDraft()}
       if(!tasksReady()){await fillObservationTasks(false);if(!tasksReady())throw new Error('观察条件尚未生成完整，请点击开始分析重试，无需手动填写。')}
-      signal.throwIfAborted();const planSnapshot=JSON.stringify(readObservationTasks());if(analysisInfo.task_plan&&analysisInfo.task_plan!==planSnapshot){if((candidates.length||events.length||recommendedWindows.some(w=>w.status==='analyzed'))&&!confirm('评估条件已变更，继续会清空已有候选和片段进度。是否开始新分析？'))throw new Error('已保留原有证据，请核对评估条件。');recommendedWindows=[];candidates=[];events.splice(0);reportData=null;renderCandidates();renderEvents()}if(analysisInfo.task_plan!==planSnapshot){delete analysisInfo.followup_planned;delete analysisInfo.screening_windows;}analysisInfo.task_plan=planSnapshot;await waitForVideoMetadata();
+      signal.throwIfAborted();const planSnapshot=JSON.stringify(readObservationTasks());if(analysisInfo.task_plan&&analysisInfo.task_plan!==planSnapshot){if((candidates.length||events.length||recommendedWindows.some(w=>w.status==='analyzed'))&&!confirm('评估条件已变更，继续会清空已有候选和片段进度。是否开始新分析？'))throw new Error('已保留原有证据，请核对评估条件。');recommendedWindows=[];candidates=[];events.splice(0);reportData=null;renderCandidates();renderEvents()}if(analysisInfo.task_plan!==planSnapshot){delete analysisInfo.followup_planned;delete analysisInfo.screening_windows;delete analysisInfo.focus_selection;}analysisInfo.task_plan=planSnapshot;await waitForVideoMetadata();
       $('#videoSlot').appendChild($('#video'));$('#video').classList.remove('hidden');showStep(3);$('#autoTitle').textContent='AI 正在自动分析';
       autoStage='clips';selectedVideoDuration=$('#video').duration;
       const strategy=$('#analysisStrategy').value||'full';analysisInfo.analysis_mode=strategy;analysisInfo.detail_fps=Number($('#detailFps').value)||2;
-      analysisInfo.workflow_version=strategy==='quick'?'screen-focus-v1':'whole-class-v1';
+      if(strategy==='quick'&&analysisInfo.workflow_version!=='screen-focus-v2')delete analysisInfo.followup_planned;
+      analysisInfo.workflow_version=strategy==='quick'?'screen-focus-v2':'whole-class-v1';
       if(strategy==='quick'){
         autoStage='screening';analysisInfo.screening_windows=buildScreeningWindows(selectedVideoDuration,videoIdentity,analysisInfo.screening_windows||[]);
         const screening=useCompletedScreening?{completed:analysisInfo.screening_windows.filter(w=>w.status==='analyzed').length,total:analysisInfo.screening_windows.length}:await runWindowQueue(analysisInfo.screening_windows,w=>analyzeScreenWindow(w,signal),signal,()=>{updateAutoProgress();saveDraft()});
@@ -674,6 +723,9 @@ const fetch=(...args)=>window.evaluationFetch(...args);
         if(!screening.completed)throw new Error('尚无成功初筛结果，请先完成至少一个区间或改用完整检查。');
         analysisInfo.screening_incomplete=screening.completed<screening.total;
         const previous=recommendedWindows.length;recommendedWindows=buildFocusedWindows(selectedVideoDuration,videoIdentity,analysisInfo.screening_windows,recommendedWindows);
+        const selection=recommendedWindows.selection_summary,history=(analysisInfo.focus_selection?.retired||[]).filter(w=>w.video_identity===videoIdentity);
+        selection.retired=[...history,...selection.retired.filter(w=>!history.some(old=>old.id===w.id))];
+        analysisInfo.focus_selection=selection;
         if(recommendedWindows.length>previous)delete analysisInfo.followup_planned;
       }else recommendedWindows=buildCoverageWindows(selectedVideoDuration,videoIdentity,recommendedWindows);renderWindows();updateAutoProgress();saveDraft();
       autoMessage(strategy==='quick'?(analysisInfo.screening_incomplete?'使用已完成的部分初筛继续精看，未完成初筛范围保留缺失提示。':'全课初筛完成，正在精看推荐区间及首中尾固定抽查；初筛线索不参与评分。'):'已建立全课检查区间，按教案依次检查音画事实。');
@@ -681,21 +733,22 @@ const fetch=(...args)=>window.evaluationFetch(...args);
       const analyzeWindow=async w=>{
         signal.throwIfAborted();if(w.video_identity!==videoIdentity)throw new Error('片段与当前视频不一致，请重新选择原视频。');
         $('#analysisState').textContent=`正在检查 ${timeLabel(w.start_seconds)}—${timeLabel(w.end_seconds)}：${w.source==='evidence_followup'?'补查任务过程':w.source==='focused'?'重点片段精看':'全课分段分析'}。`;
+        if(strategy==='quick'&&focusEvidenceCovered(w,candidates)){w.deferred_reason='同一任务已有完整的对应表现证据，停止重复精看；本段未核实。';return false;}
         selectedWindowId=w.id;$('#clipStart').value=w.start_seconds;$('#clipEnd').value=w.end_seconds;
         await analyzeClip();
       },progress=()=>{updateAutoProgress();renderWindows();saveDraft()};
       let result=await runWindowQueue(recommendedWindows,analyzeWindow,signal,progress);
       if(!signal.aborted&&result.completed===result.total&&!analysisInfo.followup_planned){
         autoStage='followup';
-        const extra=buildFollowupWindows(selectedVideoDuration,videoIdentity,recommendedWindows,candidates);
+        const extra=buildFollowupWindows(selectedVideoDuration,videoIdentity,recommendedWindows,candidates,strategy==='quick');
         analysisInfo.followup_planned=true;recommendedWindows.push(...extra);progress();
         if(extra.length)result=await runWindowQueue(recommendedWindows,analyzeWindow,signal,progress);
       }
       updateAutoProgress();
       $('#autoTitle').textContent=signal.aborted?'分析已暂停':result.completed<result.total?'部分片段待继续':analysisInfo.screening_incomplete?'部分范围已分析，请核对片段':'分析完成，请核对片段';
-      autoMessage(signal.aborted?'已暂停，完成的片段已保留。点击继续分析即可接着处理。':`${result.completed} / ${result.total} 个片段分析完成，发现 ${candidates.filter(c=>!c.ignored).length} 条待核对记录。${result.completed<result.total?'部分片段失败或未完成；已保留进度，请展开时间轴查看具体原因。':(analysisInfo.screening_incomplete?'部分初筛未完成；本次仅覆盖已精看的范围。':'')+'请按下方指标检查证据；没有发现迁移等表现时保留待评，不自动补成达标。'}`);
+      autoMessage(signal.aborted?'已暂停，完成的片段已保留。点击继续分析即可接着处理。':`${recommendedWindows.filter(w=>w.status==='analyzed').length} 个片段精看完成，${recommendedWindows.filter(w=>w.status==='deferred').length} 个重复片段未精看，发现 ${candidates.filter(c=>!c.ignored).length} 条待核对记录。${result.completed<result.total?'部分片段失败或未完成；已保留进度，请展开时间轴查看具体原因。':(analysisInfo.screening_incomplete?'部分初筛未完成；本次仅覆盖已精看的范围。':'')+'请按下方指标检查证据；没有发现迁移等表现时保留待评，不自动补成达标。'}`);
     }catch(error){workflowError=error.message;$('#autoTitle').textContent=signal.aborted?'分析已暂停':'分析暂未完成';autoMessage(signal.aborted?'已暂停，已有内容已保留。点击继续分析。':`${error.message}${/已保存|已保留/.test(error.message)?'':' 已完成的内容已保留，可继续分析。'}`)}
-    finally{globalThis.evaluationDiagnostics?.record('workflow',{status:signal.aborted?'cancelled':workflowError?'failed':(recommendedWindows.some(w=>w.status!=='analyzed')||(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed'))?'partial':'complete',elapsed_ms:Date.now()-workflowStarted,message:workflowError||''});clearInterval(timer);autoBusy=false;autoAbort=null;document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',Number(el.dataset.step)===currentStep));setAutoControls(false);updateAutoProgress();saveDraft()}
+    finally{globalThis.evaluationDiagnostics?.record('workflow',{status:signal.aborted?'cancelled':workflowError?'failed':(recommendedWindows.some(w=>!['analyzed','deferred'].includes(w.status))||(analysisInfo.screening_windows||[]).some(w=>w.status!=='analyzed'))?'partial':'complete',elapsed_ms:Date.now()-workflowStarted,message:workflowError||''});clearInterval(timer);autoBusy=false;autoAbort=null;document.querySelectorAll('.step').forEach(el=>el.classList.toggle('current',Number(el.dataset.step)===currentStep));setAutoControls(false);updateAutoProgress();saveDraft()}
   }
   $('#startAssessment').onclick=startAssessment;$('#resumeAssessment').onclick=startAssessment;
   $('#continueFocused').onclick=()=>startAssessment({useCompletedScreening:true});
