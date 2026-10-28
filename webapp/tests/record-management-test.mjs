@@ -9,7 +9,7 @@ const materialScript=fs.readFileSync(new URL('../frontend/assessment-materials.j
 const freshCode=main.slice(main.indexOf('function fresh('),main.indexOf('function allRecords('));
 const fresh=new Function('DEMO_ID','A_ITEMS',freshCode+';return fresh')('current',['A1','A2','A3','A4','A5'].map(id=>({id})));
 
-function setup({others=true,confirm=true,busy=false}={}){
+function setup({others=true,confirm=true,busy=false,view='overview'}={}){
   const current={...fresh(),name:'原名称',basic:{tool_name:'教具名称',teacher:'教师',goals:'目标'},module_a:{A1:{score:5,evidence:'证据'}},module_a_inputs:{description:'旧说明'},module_a_meta:{summary:'旧总结'},module_b:{report:{module_b_score:60},events:[{id:'E1'}],candidates:[{id:'C1'}],transcript_state:{segments:[{text:'旧文字稿'}]}}};
   const other={...fresh(),id:'other',name:'其他记录'},key='records',draftKey='classroom-evaluation-draft-v4-current';
   const store={records:JSON.stringify(others?[current,other]:[current]),[draftKey]:'old',[draftKey+'-plan-batches']:'old',[draftKey+'-locator-batches']:'old',[draftKey+'-before-restore']:'old','classroom-evaluation-draft-v4-other':'keep'};
@@ -22,14 +22,24 @@ function setup({others=true,confirm=true,busy=false}={}){
   const localStorage={getItem:k=>store[k]??null,setItem:(k,v)=>store[k]=v,removeItem:k=>delete store[k]};
   // Storage keys are enumerable in the browser, its methods are not.
   const storage=new Proxy(localStorage,{ownKeys:()=>Reflect.ownKeys(store),getOwnPropertyDescriptor:()=>({enumerable:true,configurable:true})});
-  const location={hash:'#overview',origin:'http://local',replace(url){calls.push(url);if(!suppressSave)store[draftKey]='resurrected by unload'}};
+  let reloads=0;
+  const location={hash:'#'+view,origin:'http://local',href:'http://local/?record=current#'+view,
+    replace(url){calls.push(url);const next=new URL(url,this.href);if(next.pathname+next.search!==new URL(this.href).pathname+new URL(this.href).search)this.reload();this.href=next.href},
+    reload(){reloads++;if(!suppressSave)store[draftKey]='resurrected by unload'}};
+  const history={replaceState(_state,_title,url){calls.push(url);location.href=new URL(url,location.href).href;location.hash=new URL(location.href).hash}};
   const window={addEventListener(){},scrollTo(){},assessmentMaterials:{bind:async()=>{},whenIdle:async()=>calls.push('parent-idle'),removeRecord:async id=>{calls.push('remove-materials');for(const key of materials.keys())if(key.startsWith(id+':'))materials.delete(key)}}};
-  const context=vm.createContext({document,window,location,localStorage:storage,DEMO_ID:'current',RECORDS_KEY:key,ACTIVE_KEY:'active',record:current,allRecords:()=>JSON.parse(store.records),fresh,persist:()=>{store.records=JSON.stringify([context.record,...JSON.parse(store.records).filter(item=>item.id!=='current')])},recalc(){},crypto:{randomUUID:()=> 'new-id'},confirm:()=>confirm,Date,console});
+  const context=vm.createContext({document,window,location,history,localStorage:storage,DEMO_ID:'current',RECORDS_KEY:key,ACTIVE_KEY:'active',record:current,allRecords:()=>JSON.parse(store.records),fresh,persist:()=>{store.records=JSON.stringify([context.record,...JSON.parse(store.records).filter(item=>item.id!=='current')])},recalc(){},crypto:{randomUUID:()=> 'new-id'},confirm:()=>confirm,Date,console});
   vm.runInContext(navigation,context);
-  return {store,materials,calls,context,element,other,click:selector=>element(selector).listeners.click(),submitName:()=>element('#saveRename').listeners.click({preventDefault(){}})};
+  return {store,materials,calls,context,element,other,get reloads(){return reloads},click:selector=>element(selector).listeners.click(),submitName:()=>element('#saveRename').listeners.click({preventDefault(){}})};
 }
 
 // Reset a populated formal record with scored A/B reports and every draft cache.
+// Same-URL and fragment-only navigations do not reload the document in browsers.
+for(const view of ['overview','moduleA','moduleB']){
+  const app=setup({view});await app.click('#restartAssessment');
+  assert.equal(app.reloads,1,`Restart from ${view} must reload stale scores and disabled controls`);
+  assert.equal(app.context.location.href,'http://local/?record=current#overview');
+}
 {
   const app=setup();await app.click('#restartAssessment');
   const [reset,other]=JSON.parse(app.store.records);

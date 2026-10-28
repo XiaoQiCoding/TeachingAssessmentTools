@@ -80,7 +80,10 @@
       const next=action==='delete'?(remaining[0]||{...fresh(),id:'EVAL-'+(globalThis.evaluationUuid?.()||crypto.randomUUID())}):{...fresh(),name:record.name||''};
       const updated=action==='delete'&&remaining.length?remaining:[next,...remaining];
       localStorage.setItem(RECORDS_KEY,JSON.stringify(updated));localStorage.setItem(ACTIVE_KEY,next.id);
-      location.replace(`/?record=${encodeURIComponent(next.id)}#overview`);
+      // A restart keeps the record URL. Replacing that URL can be a same-document
+      // navigation, leaving stale scores and disabled controls on screen.
+      history.replaceState(null,'',`/?record=${encodeURIComponent(next.id)}#overview`);
+      location.reload();
     }catch(error){document.querySelector('#saveState').textContent='操作未完成：'+error.message;buttons.forEach(button=>button.disabled=false);}
   }
   document.querySelector('#restartAssessment').addEventListener('click',()=>changeRecord('restart'));
