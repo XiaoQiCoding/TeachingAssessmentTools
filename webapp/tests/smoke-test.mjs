@@ -71,7 +71,7 @@ const classroomResponse = await worker.fetch(new Request("https://example.test/a
   { id: "E5", phase: "tool_use", type: "response", student_id: "S01", outcome: "positive", assistance: "independent", start_seconds: 30, confidence: "high", note: "正确反应", confirmed: true }
 ] }) }), {});
 const classroom = await classroomResponse.json();
-if (!classroomResponse.ok || classroom.version !== "1.4" || classroom.dimensions.length !== 5 || classroom.dimensions.some(item => item.score !== null || item.status !== "insufficient_evidence") || classroom.scored_weight !== 0 || classroom.module_b_score !== null || classroom.audit.rule_version !== "classroom-b-v6") throw new Error("Old requests without reviewed source evidence must not produce full marks: "+JSON.stringify(classroom));
+if (!classroomResponse.ok || classroom.version !== "1.4" || classroom.dimensions.length !== 5 || classroom.dimensions.some(item => item.score !== (item.id === "B5" ? 5 : 0)) || classroom.scored_weight !== 60 || classroom.module_b_score !== 12 || classroom.audit.rule_version !== "classroom-b-v7") throw new Error("Old requests without reviewed source evidence must not produce full marks: "+JSON.stringify(classroom));
 if (!classroom.dimensions.every(item => item.weight === 12 && item.max_score === 5 && item.criterion && item.modification === "")) throw new Error("Module B rubric fields are incomplete or still contain modification advice");
 const exportResponse = await worker.fetch(new Request("https://example.test/api/classroom/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lesson: { name: "测试课堂" }, students: [{ id: "S01", level: "基础层" }], events: [
   { id: "E1", phase: "baseline", type: "engagement", student_id: "S01", outcome: "negative", assistance: "none", start_seconds: 1, confidence: "high", note: "未参与", confirmed: true },
@@ -105,10 +105,10 @@ const demoExportText = new TextDecoder().decode(demoExportBytes);
 if (!demoExportResponse.ok || demoExportBytes[0] !== 0x50 || demoExportBytes[1] !== 0x4b || !demoExportText.includes("核心演示") || !demoExportText.includes("模块 A") || !demoExportText.includes("模块 B") || demoExportText.includes("创新与推广综合加分")) throw new Error("Core demo XLSX export is invalid");
 const indexResponse = await worker.fetch(new Request("https://example.test/"), {});
 const indexHtml = await indexResponse.text();
-if (!indexResponse.ok || !indexHtml.includes("核心 Demo") || !indexHtml.includes("课前适配性评估") || !indexHtml.includes("课堂实施效果评估") || indexHtml.includes("创新推广加分项") || !indexHtml.includes("开始 AI 评估模块 A") || !indexHtml.includes("/api/evaluation/module-a") || !indexHtml.includes("导出 A+B 核心 Excel") || !indexHtml.includes("待补证") || !indexHtml.includes("refreshBScoring")) throw new Error("Core demo page is incomplete");
+if (!indexResponse.ok || !indexHtml.includes("核心 Demo") || !indexHtml.includes("课前适配性评估") || !indexHtml.includes("课堂实施效果评估") || indexHtml.includes("创新推广加分项") || !indexHtml.includes("开始 AI 评估模块 A") || !indexHtml.includes("/api/evaluation/module-a") || !indexHtml.includes("导出 A+B 核心 Excel") || indexHtml.includes("待补证") || !indexHtml.includes("refreshBScoring")) throw new Error("Core demo page is incomplete");
 const pageResponse = await worker.fetch(new Request("https://example.test/classroom"), {});
 const pageHtml = await pageResponse.text();
-if (!pageResponse.ok || !pageHtml.includes("核对 AI 发现的片段") || !pageHtml.includes("AI 分析 · 人工复核") || !pageHtml.includes("restoreDraft") || !pageHtml.includes("下载 Excel 表格") || !pageHtml.includes("评估指标描述") || !pageHtml.includes("version==='1.4'") || pageHtml.includes("创新推广加分项")) throw new Error("Classroom demo page was not served with rubric report and draft recovery");
+if (!pageResponse.ok || !pageHtml.includes("核对 AI 发现的片段") || !pageHtml.includes("AI 分析 · 人工复核") || !pageHtml.includes("restoreDraft") || !pageHtml.includes("下载 Excel 表格") || !pageHtml.includes("评估指标描述") || !pageHtml.includes("normalizeClassroomScores") || pageHtml.includes("创新推广加分项")) throw new Error("Classroom demo page was not served with rubric report and draft recovery");
 console.log("Evaluation routes, AI video candidates, classroom rules, document extraction, and client pages are valid");
 
 const oldRecord=structuredClone(record);

@@ -24,8 +24,8 @@ const top=await report(excellent(6),{students});assert.equal(top.dimensions[2].s
 assert.equal((await report(excellent(6).map(e=>({...e,quality_evidence:''})),{students})).dimensions[2].score,4,'No excellent score from an unsubstantiated label');
 assert.equal((await report(excellent(6).map(e=>({...e,start_seconds:0,end_seconds:5})),{students})).dimensions[2].judge_metrics.opportunities,1,'Overlapping records cannot establish stability');
 assert.equal((await report(excellent(6),{students:[...students,{id:'S03',level:'提高层'}]})).dimensions[2].score,5,'Missing student coverage must be disclosed separately, not lower observed performance');
-assert.equal((await report([event('unverified-quality',0,'unknown')])).dimensions[2].score,null,'An explicit unknown quality cannot become a success score from a positive label');
-const neutral=await report([event('unknown',0,'unknown',{outcome:'neutral'})]);assert.equal(neutral.dimensions[2].score,null);
+assert.equal((await report([event('unverified-quality',0,'unknown')])).dimensions[2].score,0,'An explicit unknown quality cannot become a success score from a positive label');
+const neutral=await report([event('unknown',0,'unknown',{outcome:'neutral'})]);assert.equal(neutral.dimensions[2].score,0);
 const allDimensions=excellent(6).flatMap((e,i)=>[e,{...e,id:`G${i}`,type:'generalization',phase:'generalization',changed_context:'更换物品后仍按原分类规则完成'},{...e,id:`M${i}`,type:'emotion',actual_response:'持续平稳参与活动'}]);
 const full=await report(allDimensions,{students});assert.equal(full.module_b_score,60,'Full marks remain attainable with sufficient evidence');
 for(const row of full.dimensions){assert.ok(row.score_explanation);assert.ok(row.next_level_gap);assert.ok(row.judge_metrics.rated_event_ids.length);assert.equal(row.score*2,Math.round(row.score*2))}

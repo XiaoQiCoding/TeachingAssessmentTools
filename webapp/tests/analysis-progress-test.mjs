@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const html=fs.readFileSync(new URL('../frontend/classroom.html',import.meta.url),'utf8');
+const code=html.slice(html.indexOf('  function buildAnalysisStages('),html.indexOf('  function renderAnalysisPipeline('));
+const stages=new Function('timeLabel',code+';return buildAnalysisStages')(s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`);
+const defaults={screens:[],windows:[],transcript:null,identity:'v',mode:'quick',busy:false,phase:'',planReady:true,selection:null,followupPlanned:false,candidateRows:[],eventRows:[]};
+const run=extra=>Object.fromEntries(stages({...defaults,...extra}).map(s=>[s.id,s]));
+const window=(extra={})=>({video_identity:'v',start_seconds:0,end_seconds:120,status:'pending',...extra});
+// 38:50 lesson: seven completed two-minute screening windows, thirteen still pending.
+const screens=Array.from({length:20},(_,i)=>window({start_seconds:i*120,end_seconds:Math.min((i+1)*120,2330),status:i<7?'analyzed':i===7?'analyzing':'pending'}));
+let view=run({screens,busy:true,phase:'screening'});
+assert.equal(view.screen.metric,'7 / 20 段已完成');assert.equal(view.screen.done,7);assert.equal(view.screen.total,20);assert.equal(view.screen.state,'active');assert.match(view.screen.note,/14:00—16:00/);assert.equal(view.detail.metric,'待生成任务');
+view=run({windows:[window({source:'focused'})],selection:{}});assert.equal(view.detail.metric,'0 / 1 段已完成');assert.equal(view.detail.status,'待继续');
+view=run({windows:[window({status:'deferred',source:'focused'}),window({status:'analyzed',source:'focused'})],selection:{}});assert.equal(view.detail.metric,'1 / 1 段已完成 · 1 段复用结果');assert.equal(view.detail.state,'complete');
+view=run({screens:[window({status:'retry_wait',error:'temporary'})],busy:true,phase:'screening'});assert.equal(view.screen.status,'自动重试中');
+view=run({screens:[window({status:'failed',error:'failure'})]});assert.equal(view.screen.state,'attention');assert.equal(view.screen.rows[0].text,'failure');
+view=run({mode:'full',windows:[window()]});assert.equal(view.screen.state,'skipped');assert.equal(view.transcript.state,'skipped');assert.equal(view.detail.title,'全课逐段分析');
+view=run({selection:{},followupPlanned:true});assert.equal(view.detail.status,'无需处理');assert.equal(view.followup.status,'无需处理');
+view=run({transcript:{video_identity:'other',complete:true,segments:[{text:'old'}]}});assert.equal(view.transcript.status,'待开始');
+view=run({transcript:{video_identity:'v',complete:true,source:'no_audio'}});assert.equal(view.transcript.status,'无音轨');
+view=run({windows:[window({source:'focused',status:'analyzed'}),window({source:'evidence_followup',status:'pending'})],busy:true,phase:'followup',selection:{},followupPlanned:true});assert.equal(view.detail.total,1);assert.equal(view.followup.total,1);assert.equal(view.followup.state,'active');
+const rows=['human','batch','pending','ignored'].map(id=>({id,video_identity:'v',ignored:id==='ignored'}));
+view=run({candidateRows:rows,eventRows:[{id:'human',video_identity:'v',confirmed:true,reviewed_clip:true},{id:'batch',video_identity:'v',confirmed:true,review_method:'ai_batch'}]});assert.equal(view.review.metric,'1 条待核对 · 1 条人工确认 · 1 条AI批量采纳');
+assert.match(html,/e\.review_method!=='ai_batch'&&e\.video_identity===videoIdentity/);
+console.log('Stage progress: screening counts, 0/1 detail, reuse, retry, pause, full mode, no tasks, transcript identity, followup and human/batch review passed');

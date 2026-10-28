@@ -53,6 +53,28 @@ assert.equal(parse('1\n00:00:10,000 --> 00:00:15,000\n请分类\n\n2\n00:00:18,0
 assert.equal(parse('WEBVTT\n\n00:10.000 --> 00:15.000\n请分类\n',100)[0].start_seconds,10);
 assert.throws(()=>parse('普通文字无时间',100));
 
+// Exercise the same automatic transcription helper used before screening.
+const automaticTranscriptSource=html.slice(html.indexOf('  function transcriptForRange('),html.indexOf("  $('#cancelTranscript').onclick"));
+function automaticTranscriptHarness({state=null,hasAudio=true,pollError=null}={}){
+  let posts=0,polls=0,sources=0;
+  const api=new Function('fetch','getSource','pollTranscript','initial',`
+    let videoIdentity='v',selectedVideoDuration=245,serverVideoSource=null,transcriptState=initial;
+    const $=()=>({}),renderTranscript=()=>{},saveDraft=()=>{},ensureServerVideoSource=getSource;
+    ${automaticTranscriptSource}
+    return {ensure:ensureAnalysisTranscript,range:transcriptForRange,state:()=>transcriptState};
+  `)(async(_url,options)=>{posts++;assert.deepEqual(JSON.parse(options.body),{video_source_id:'source'});return Response.json({job_id:'job'})},async()=>{sources++;return {source_id:'source',has_audio:hasAudio}},async()=>{polls++;if(pollError)throw pollError;return {duration_seconds:245,source:'minimax_asr',segments:[{start_seconds:119,end_seconds:122,text:'边界句'},{start_seconds:130,end_seconds:135,text:'本段句'},{start_seconds:240,end_seconds:242,text:'下一段'}]}},state);
+  return {...api,counts:()=>({posts,polls,sources})};
+}
+const autoTranscript=automaticTranscriptHarness(),transcriptSignal=new AbortController().signal;
+await autoTranscript.ensure(transcriptSignal);assert.equal(autoTranscript.state().complete,true);
+assert.deepEqual(autoTranscript.range(120,240).map(s=>s.text),['边界句','本段句']);
+await autoTranscript.ensure(transcriptSignal);assert.deepEqual(autoTranscript.counts(),{posts:1,polls:1,sources:1},'Resume reuses the transcript without new ASR charges');
+const imported=automaticTranscriptHarness({state:{video_identity:'v',source:'import',segments:[{start_seconds:1,end_seconds:2,text:'字幕'}]}});await imported.ensure(transcriptSignal);assert.equal(imported.counts().posts,0);
+const noAudio=automaticTranscriptHarness({hasAudio:false});await noAudio.ensure(transcriptSignal);assert.equal(noAudio.state().source,'no_audio');assert.equal(noAudio.counts().posts,0);
+const resumed=automaticTranscriptHarness({state:{video_identity:'v',job_id:'existing',segments:[]}});await resumed.ensure(transcriptSignal);assert.equal(resumed.counts().posts,0);assert.equal(resumed.counts().polls,1);
+const failedTranscript=automaticTranscriptHarness({pollError:new Error('ASR failed')});await assert.rejects(failedTranscript.ensure(transcriptSignal),/ASR failed/);assert.equal(failedTranscript.state().job_id,undefined,'Failed jobs must not prevent retries');
+const staleTranscript=automaticTranscriptHarness({state:{video_identity:'other',segments:[{start_seconds:1,end_seconds:2,text:'旧视频'}]}});assert.deepEqual(staleTranscript.range(0,10),[]);await staleTranscript.ensure(transcriptSignal);assert.equal(staleTranscript.counts().posts,1);
+
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:'{"windows":[{"task_id":"T1","segment_ids":["S1"],"reason":"核对学生反应"}]}'}}]}),{headers:{'content-type':'application/json'}});
 const located=await worker.fetch(new Request('http://test/api/classroom/locate-transcript',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({segments:rows,duration:100,observation_tasks:tasks})}),{MINIMAX_API_KEY:'test'});

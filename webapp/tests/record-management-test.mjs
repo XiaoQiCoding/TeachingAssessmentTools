@@ -54,7 +54,7 @@ for(const view of ['overview','moduleA','moduleB']){
   assert.equal(app.calls.at(-1),'/?record=current#overview');
   // The actual A/B render functions must show blank scores after reset.
   const render=main.slice(main.indexOf('function aState('),main.indexOf('function recalc('));
-  new Function('record','A_ITEMS','$','esc','openB',`let aFailure='';${render};buildA();renderB();`)(reset,['A1','A2','A3','A4','A5'].map(id=>({id})),app.element,String,()=>{});
+  new Function('record','A_ITEMS','$','esc','openB',fs.readFileSync(new URL('../frontend/classroom-score-policy.js',import.meta.url),'utf8')+`let aFailure='';${render};buildA();renderB();`)(reset,['A1','A2','A3','A4','A5'].map(id=>({id})),app.element,String,()=>{});
   assert.equal(app.element('#aTotal').textContent,'— / 40');assert.equal(app.element('#bTotal').textContent,'— / 60');
   assert.ok(app.element('#aBody').innerHTML.includes('— / 5'));
 }

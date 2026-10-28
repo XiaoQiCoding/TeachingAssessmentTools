@@ -29,13 +29,15 @@ const screen=html.slice(html.indexOf('  async function analyzeScreenWindow('),ht
 let uploads=0,requests=0;const controls=new Map();
 const $=key=>{if(!controls.has(key))controls.set(key,{files:[],value:'',textContent:''});return controls.get(key)};
 $('#videoFile').files=[new Blob(['fixture'])];
-const fakeFetch=async url=>{
+const fakeFetch=async (url,options)=>{
  if(url.startsWith('/api/classroom/video-source?'))return Response.json({available_bytes:15*1024**3});
  if(url==='/api/classroom/video-source'){uploads++;return Response.json({source_id:'source-'+uploads,bytes:7})}
+ const transcript=JSON.parse(options.body.get('transcript_segments'));assert.deepEqual(transcript.map(s=>s.text),['当前两分钟']);assert.equal(options.body.get('transcript_status'),'complete');
  requests++;if(requests===1)return Response.json({error:'video expired',retryable:false},{status:410});
  return Response.json({summary:'Recovered',windows:[],analysis:{timings:{},frame_count:1}});
 };
-const analyze=new Function('$','fetch','videoIdentity','timeLabel','window',source+screen+';return analyzeScreenWindow')($,fakeFetch,'video',String,{evaluationVideoFingerprint:async()=> 'a'.repeat(64)});
+const transcriptRange=html.slice(html.indexOf('  function transcriptForRange('),html.indexOf('  async function ensureAnalysisTranscript('));
+const analyze=new Function('$','fetch','videoIdentity','timeLabel','window',`let transcriptState={video_identity:'video',complete:true,segments:[{start_seconds:10,end_seconds:12,text:'当前两分钟'},{start_seconds:120,end_seconds:122,text:'下一段'}]};`+transcriptRange+source+screen+';return analyzeScreenWindow')($,fakeFetch,'video',String,{evaluationVideoFingerprint:async()=> 'a'.repeat(64)});
 const screenJobs=[{id:'screen',status:'pending',video_identity:'video',start_seconds:0,end_seconds:120}];
 await queue(screenJobs,w=>analyze(w,new AbortController().signal),new AbortController().signal,()=>{},noWait);
 assert.equal(uploads,2);assert.equal(requests,2);assert.equal(screenJobs[0].status,'analyzed');
