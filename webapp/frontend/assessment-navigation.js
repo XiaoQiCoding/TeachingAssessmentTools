@@ -20,7 +20,11 @@
   function navigate(view){location.hash=view;applyView();window.scrollTo(0,0)}
   function refreshOverview(){
     const source=document.querySelector('#moduleA .table-wrap'),target=document.querySelector('#overviewAContent');
-    if(source&&target){const table=source.cloneNode(true);for(const node of table.querySelectorAll('[id]'))node.removeAttribute('id');target.replaceChildren(table);}
+    const assessed=Boolean(record.module_a_meta)||Object.values(record.module_a||{}).some(item=>(Number(item.score)>=1&&Number(item.score)<=5)||String(item.evidence||'').trim());
+    if(target&&!assessed){
+      target.innerHTML='<div class="b-empty"><strong>尚未生成课前评估结果</strong><p>已选材料会保留，可进入模块 A 开始评估。</p><button type="button" class="btn primary" id="enterA">进入评估</button></div>';
+      target.querySelector('#enterA').addEventListener('click',()=>navigate('moduleA'));
+    }else if(source&&target){const table=source.cloneNode(true);for(const node of table.querySelectorAll('[id]'))node.removeAttribute('id');target.replaceChildren(table);}
     const picker=document.querySelector('#recordPicker'),selection=DEMO_ID;
     picker.replaceChildren(...allRecords().map(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=(item.name||item.basic?.tool_name||'未命名评估')+' · '+new Date(item.created_at||item.updated_at).toLocaleDateString();return option}));picker.value=selection;
   }
@@ -81,12 +85,24 @@
   }
   document.querySelector('#restartAssessment').addEventListener('click',()=>changeRecord('restart'));
   document.querySelector('#deleteAssessment').addEventListener('click',()=>changeRecord('delete'));
+  const renameDialog=document.querySelector('#renameDialog'),recordName=document.querySelector('#recordName'),renameError=document.querySelector('#renameError');
   document.querySelector('#renameAssessment').addEventListener('click',()=>{
-    const name=prompt('请输入评估记录名称',record.name||record.basic?.tool_name||'未命名评估');
-    if(name===null)return;
-    if(!name.trim()){document.querySelector('#saveState').textContent='记录名称不能为空。';return;}
-    record.name=name.trim();persist('评估记录已重命名');refreshOverview();
+    recordName.value=record.name||record.basic?.tool_name||'未命名评估';
+    renameError.textContent='';recordName.removeAttribute('aria-invalid');
+    renameDialog.showModal();recordName.focus();recordName.select();
   });
+  document.querySelector('#cancelRename').addEventListener('click',()=>renameDialog.close());
+  function saveRecordName(event){
+    event.preventDefault();
+    const name=recordName.value.trim();
+    if(!name){renameError.textContent='记录名称不能为空。';recordName.setAttribute('aria-invalid','true');recordName.focus();return;}
+    const previousName=record.name;
+    try{record.name=name;persist('评估记录已重命名');refreshOverview();renameDialog.close();}
+    catch{record.name=previousName;renameError.textContent='名称未能保存，请重试。';}
+  }
+  document.querySelector('#saveRename').addEventListener('click',saveRecordName);
+  document.querySelector('#renameForm').addEventListener('submit',saveRecordName);
+  recordName.addEventListener('keydown',event=>{if(event.key==='Enter')saveRecordName(event)});
   document.querySelector('#aDescription').addEventListener('input',event=>{record.module_a_inputs={...(record.module_a_inputs||{}),description:event.target.value};persist()});
   document.querySelector('#aDescription').value=record.module_a_inputs?.description||'';
   void window.assessmentMaterials.bind({recordId:DEMO_ID,slot:'moduleA.files',input:document.querySelector('#aFiles'),status:document.querySelector('#aMaterialStatus')});

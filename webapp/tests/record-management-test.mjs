@@ -9,13 +9,13 @@ const materialScript=fs.readFileSync(new URL('../frontend/assessment-materials.j
 const freshCode=main.slice(main.indexOf('function fresh('),main.indexOf('function allRecords('));
 const fresh=new Function('DEMO_ID','A_ITEMS',freshCode+';return fresh')('current',['A1','A2','A3','A4','A5'].map(id=>({id})));
 
-function setup({others=true,confirm=true,prompt='新名称',busy=false}={}){
+function setup({others=true,confirm=true,busy=false}={}){
   const current={...fresh(),name:'原名称',basic:{tool_name:'教具名称',teacher:'教师',goals:'目标'},module_a:{A1:{score:5,evidence:'证据'}},module_a_inputs:{description:'旧说明'},module_a_meta:{summary:'旧总结'},module_b:{report:{module_b_score:60},events:[{id:'E1'}],candidates:[{id:'C1'}],transcript_state:{segments:[{text:'旧文字稿'}]}}};
   const other={...fresh(),id:'other',name:'其他记录'},key='records',draftKey='classroom-evaluation-draft-v4-current';
   const store={records:JSON.stringify(others?[current,other]:[current]),[draftKey]:'old',[draftKey+'-plan-batches']:'old',[draftKey+'-locator-batches']:'old',[draftKey+'-before-restore']:'old','classroom-evaluation-draft-v4-other':'keep'};
   const materials=new Map([['current:moduleA.files',['photo']],['current:lessonPlan',['lesson']],['current:classroomVideo',['video']],['other:classroomVideo',['keep']]]);
   const calls=[],elements=new Map();
-  const element=selector=>{if(!elements.has(selector))elements.set(selector,{dataset:{},disabled:false,value:'',textContent:'',listeners:{},classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.listeners[type]=fn},replaceChildren(...children){this.children=children},getAttribute(){return null},cloneNode(){return {querySelectorAll:()=>[]}}});return elements.get(selector)};
+  const element=selector=>{if(!elements.has(selector))elements.set(selector,{dataset:{},disabled:false,value:'',textContent:'',open:false,showModal(){this.open=true},close(){this.open=false},focus(){},select(){},setAttribute(name,value){this[name]=value},removeAttribute(name){delete this[name]},listeners:{},classList:{add(){},remove(){},toggle(){}},addEventListener(type,fn){this.listeners[type]=fn},replaceChildren(...children){this.children=children},querySelector(selector){return element(selector)},getAttribute(){return null},cloneNode(){return {querySelectorAll:()=>[]}}});return elements.get(selector)};
   let suppressSave=false;
   const frame=element('#classroomFrame');frame.contentWindow={evaluationModelLocked:()=>busy,discardAssessment(){suppressSave=true},assessmentMaterials:{whenIdle:async()=>calls.push('child-idle')}};
   const document={querySelector:element,querySelectorAll:()=>[],addEventListener(){},createElement:()=>({})};
@@ -24,9 +24,9 @@ function setup({others=true,confirm=true,prompt='新名称',busy=false}={}){
   const storage=new Proxy(localStorage,{ownKeys:()=>Reflect.ownKeys(store),getOwnPropertyDescriptor:()=>({enumerable:true,configurable:true})});
   const location={hash:'#overview',origin:'http://local',replace(url){calls.push(url);if(!suppressSave)store[draftKey]='resurrected by unload'}};
   const window={addEventListener(){},scrollTo(){},assessmentMaterials:{bind:async()=>{},whenIdle:async()=>calls.push('parent-idle'),removeRecord:async id=>{calls.push('remove-materials');for(const key of materials.keys())if(key.startsWith(id+':'))materials.delete(key)}}};
-  const context=vm.createContext({document,window,location,localStorage:storage,DEMO_ID:'current',RECORDS_KEY:key,ACTIVE_KEY:'active',record:current,allRecords:()=>JSON.parse(store.records),fresh,persist:()=>{store.records=JSON.stringify([context.record,...JSON.parse(store.records).filter(item=>item.id!=='current')])},recalc(){},crypto:{randomUUID:()=> 'new-id'},confirm:()=>confirm,prompt:()=>prompt,Date,console});
+  const context=vm.createContext({document,window,location,localStorage:storage,DEMO_ID:'current',RECORDS_KEY:key,ACTIVE_KEY:'active',record:current,allRecords:()=>JSON.parse(store.records),fresh,persist:()=>{store.records=JSON.stringify([context.record,...JSON.parse(store.records).filter(item=>item.id!=='current')])},recalc(){},crypto:{randomUUID:()=> 'new-id'},confirm:()=>confirm,Date,console});
   vm.runInContext(navigation,context);
-  return {store,materials,calls,context,element,other,click:selector=>element(selector).listeners.click()};
+  return {store,materials,calls,context,element,other,click:selector=>element(selector).listeners.click(),submitName:()=>element('#saveRename').listeners.click({preventDefault(){}})};
 }
 
 // Reset a populated formal record with scored A/B reports and every draft cache.
@@ -61,14 +61,33 @@ for(const options of [{confirm:false},{busy:true}]){
   const app=setup(options),before=app.store.records;await app.click('#restartAssessment');assert.equal(app.store.records,before);assert.equal(app.materials.size,4);
 }
 {
-  const app=setup({prompt:'  审阅记录  '});await app.click('#renameAssessment');
+  const app=setup();await app.click('#renameAssessment');
+  assert.equal(app.element('#renameDialog').open,true);
+  assert.equal(app.element('#recordName').value,'原名称');
+  app.element('#recordName').value='  审阅记录  ';app.submitName();
   const renamed=JSON.parse(app.store.records)[0];assert.equal(renamed.name,'审阅记录');assert.equal(renamed.basic.tool_name,'教具名称');assert.equal(renamed.module_b.report.module_b_score,60);
   assert.ok(app.element('#recordPicker').children[0].textContent.startsWith('审阅记录'));
+  assert.equal(app.element('#renameDialog').open,false);
+  await app.click('#renameAssessment');assert.equal(app.element('#recordName').value,'审阅记录');
 }
-for(const prompt of [null,'   ']){
-  const app=setup({prompt}),before=app.store.records;await app.click('#renameAssessment');assert.equal(app.store.records,before);
+{
+  const app=setup(),before=app.store.records;await app.click('#renameAssessment');
+  app.element('#recordName').value='   ';app.submitName();
+  assert.equal(app.store.records,before);assert.equal(app.element('#renameDialog').open,true);
+  assert.equal(app.element('#renameError').textContent,'记录名称不能为空。');
+  assert.equal(app.element('#recordName')['aria-invalid'],'true');
+  await app.click('#cancelRename');assert.equal(app.element('#renameDialog').open,false);
+  await app.click('#renameAssessment');assert.equal(app.element('#renameError').textContent,'');
+  assert.equal(app.element('#recordName')['aria-invalid'],undefined);
+  app.element('#recordName').value='未保存名称';await app.click('#cancelRename');assert.equal(app.store.records,before);
 }
-
+{
+  const app=setup(),before=app.store.records;await app.click('#renameAssessment');
+  app.context.persist=()=>{throw new Error('storage unavailable')};
+  app.element('#recordName').value='保存失败的名称';app.submitName();
+  assert.equal(app.store.records,before);assert.equal(app.context.record.name,'原名称');
+  assert.equal(app.element('#renameDialog').open,true);assert.match(app.element('#renameError').textContent,/未能保存/);
+}
 // Exercise the actual IndexedDB cursor deletion, including optional B-only slots.
 {
   const files=new Map([['r:moduleA.files',1],['r:lessonPlan',2],['r:classroomVideo',3],['r2:lessonPlan',4]]);

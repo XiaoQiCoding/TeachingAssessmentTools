@@ -32,3 +32,21 @@ const recordDraftCode=classroom.slice(classroom.indexOf('  function recordDraft(
 const draft=new Function('activeEvaluationRecord','analysisInfo',recordDraftCode+';return recordDraft()')(()=>formal,{});
 assert.deepEqual(draft.candidates,formal.module_b.candidates);assert.deepEqual(draft.events,formal.module_b.events);assert.equal(draft.plan_source_key,formal.module_b.plan_source_key);assert.equal(draft.step,4);
 console.log('Workspace navigation: persistent frame, separate views, concurrent A/B preservation and complete formal-record recovery passed');
+
+// Overview hides an unassessed A rubric, including after resetting a previous result.
+{
+  let entered='',cloned=0;
+  const button={addEventListener(_type,handler){this.click=handler}};
+  const target={innerHTML:'',querySelector:()=>button,replaceChildren(node){this.innerHTML='';this.child=node}};
+  const source={cloneNode(){cloned++;return{querySelectorAll:()=>[]}}};
+  const picker={replaceChildren(){}};
+  const record={module_a:{A1:{score:'',evidence:''}},module_a_meta:null};
+  const document={querySelector:selector=>selector==='#moduleA .table-wrap'?source:selector==='#overviewAContent'?target:picker,createElement:()=>({})};
+  const code=navigation.slice(navigation.indexOf('  function refreshOverview(){'),navigation.indexOf('  async function finishMaterialWrites('));
+  const refresh=new Function('document','record','allRecords','DEMO_ID','navigate',code+';return refreshOverview')(document,record,()=>[],'current',view=>entered=view);
+  refresh();assert.match(target.innerHTML,/尚未生成课前评估结果/);assert.equal(cloned,0);
+  button.click();assert.equal(entered,'moduleA');
+  record.module_a_meta={summary:'证据不足'};refresh();assert.equal(cloned,1,'Completed assessments with unknown scores must still show results');
+  record.module_a_meta=null;record.module_a.A1={score:5,evidence:'已观察'};refresh();assert.equal(cloned,2,'Legacy scored records retain their table');
+  record.module_a.A1={score:'',evidence:''};refresh();assert.match(target.innerHTML,/进入评估/);assert.equal(cloned,2);
+}
