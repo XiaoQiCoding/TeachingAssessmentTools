@@ -23,7 +23,8 @@ const record={id:'record-1',basic:{teacher:'new edit'},module_b:{candidates:[],e
 const store=new Map([['records',JSON.stringify([latest])]]),localStorage={getItem:key=>store.get(key),setItem:(key,value)=>store.set(key,value)};
 const allRecords=()=>JSON.parse(store.get('records'));
 const persistCode=main.slice(main.indexOf('function persist('),main.indexOf('function aState('));
-new Function('record','allRecords','localStorage','$',`let records=[];const DEMO_ID='record-1',RECORDS_KEY='records',ACTIVE_KEY='active';${persistCode};persist();`)(record,allRecords,localStorage,()=>({textContent:''}));
+const scorePolicy=fs.readFileSync(new URL('../frontend/classroom-score-policy.js',import.meta.url),'utf8');
+new Function('record','allRecords','localStorage','$',`let records=[];const DEMO_ID='record-1',RECORDS_KEY='records',ACTIVE_KEY='active';${scorePolicy}${persistCode};persist();`)(record,allRecords,localStorage,()=>({textContent:''}));
 assert.deepEqual(JSON.parse(store.get('records'))[0].module_b,latest.module_b);assert.equal(JSON.parse(store.get('records'))[0].basic.teacher,'new edit');
 
 // Formal-record recovery retains AI candidates, not only confirmed events and reports.
