@@ -228,15 +228,15 @@ function escapeControlsInStrings(source) {
 }
 
 const EVALUATION_MODELS = [
-  {id:'qwen3.8-flash',provider:'qwen',label:'千问 Flash'},
-  {id:'qwen3.8-max',provider:'qwen',label:'千问 Max（默认）'},
+  {id:'qwen3.8-flash',provider:'qwen',label:'千问 Flash（默认）'},
+  {id:'qwen3.8-max',provider:'qwen',label:'千问 Max'},
   {id:'qwen3.7-plus',provider:'qwen',label:'千问 Plus'},
   {id:'MiniMax-M3',provider:'minimax',label:'MiniMax M3'}
 ];
 function selectEvaluationModel(request,env){
   // Legacy API clients with only a MiniMax credential retain their old behavior.
   // Both user interfaces explicitly send their selected model, defaulting to Qwen.
-  const id=request.headers.get('x-evaluation-model')||env.DEFAULT_AI_MODEL||(env.QWEN_API_KEY?'qwen3.8-max':env.MINIMAX_API_KEY?'MiniMax-M3':'qwen3.8-max');
+  const id=request.headers.get('x-evaluation-model')||env.DEFAULT_AI_MODEL||(env.QWEN_API_KEY?'qwen3.8-flash':env.MINIMAX_API_KEY?'MiniMax-M3':'qwen3.8-flash');
   const option=EVALUATION_MODELS.find(m=>m.id===id);
   if(!option)throw new Error('不支持所选模型，请重新选择千问或 MiniMax');
   if(option.provider==='minimax')return {...env,AI_PROVIDER:'minimax',MINIMAX_MODEL:option.id};
@@ -1393,7 +1393,7 @@ export default {
     if(url.pathname.startsWith('/api/')){
       try{env=selectEvaluationModel(request,env)}catch(error){return json({error:error.message},400)}
     }
-    if(request.method==='GET'&&url.pathname==='/api/models')return json({default_model:'qwen3.8-max',selected_model:env.MINIMAX_MODEL,models:EVALUATION_MODELS.map(m=>({...m,configured:m.provider==='qwen'?Boolean(env.QWEN_API_KEY):Boolean(env.AI_PROVIDER==='qwen'?env.MINIMAX_ORIGINAL_KEY:env.MINIMAX_API_KEY)}))});
+    if(request.method==='GET'&&url.pathname==='/api/models')return json({default_model:'qwen3.8-flash',selected_model:env.MINIMAX_MODEL,models:EVALUATION_MODELS.map(m=>({...m,configured:m.provider==='qwen'?Boolean(env.QWEN_API_KEY):Boolean(env.AI_PROVIDER==='qwen'?env.MINIMAX_ORIGINAL_KEY:env.MINIMAX_API_KEY)}))});
     if (request.method === "POST" && url.pathname === "/api/evaluate") return evaluate(request, env);
     if (request.method === "POST" && url.pathname === "/api/classroom/observation-plan") return observationPlan(request, env);
     if (request.method === "POST" && url.pathname === "/api/classroom/plan") return extractClassroomPlan(request, env);
